@@ -103,11 +103,13 @@ At a 90-second cycle, ~700 input / ~250 output tokens per call, ~40 calls/hour:
 
 | Model | ≈ per hour |
 |---|---|
+| `claude-sonnet-5` (default) | ~$0.16 — intro pricing, through 2026-08-31 |
+| `claude-sonnet-5` | ~$0.24 — standard rate thereafter |
 | `claude-opus-5` | $0.50 – $0.80 |
 | `claude-haiku-4-5` | ~$0.08 |
 
-Silence triggers no calls, so real usage lands lower. Worth knowing before dismissing it: at Haiku
-pricing, $5 of credit covers roughly sixty hours of meetings.
+Silence triggers no calls, so real usage lands lower. Sonnet 5 is the chosen default: comfortably
+capable for rolling summarization at roughly a third of Opus pricing.
 
 ## Discretion
 

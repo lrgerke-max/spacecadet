@@ -46,6 +46,10 @@ or local-only mode is on — which is the default state, so this is the normal c
    `video: true` is required — Chrome will not offer audio-only display capture. Stop the video track
    immediately after acquiring the stream to save CPU.
 
+   Target platform is **Chrome on Windows**, where sharing the *entire screen* exposes a "share system
+   audio" checkbox — this is the path that hears remote Teams/Zoom desktop calls. Prompt the user
+   toward whole-screen share rather than a window share, since window shares do not carry audio.
+
 Detect and clearly report the case where the user shares a screen but leaves "share system audio"
 unchecked — the resulting stream has no audio track. Say exactly that, don't fail silently.
 
@@ -121,7 +125,7 @@ await fetch("https://api.anthropic.com/v1/messages", {
     "anthropic-dangerous-direct-browser-access": "true"
   },
   body: JSON.stringify({
-    model: selectedModel,              // default "claude-opus-5"
+    model: selectedModel,              // default "claude-sonnet-5"
     max_tokens: 2000,
     system: SYSTEM_PROMPT,
     output_config: {
@@ -133,7 +137,7 @@ await fetch("https://api.anthropic.com/v1/messages", {
 })
 ```
 
-Model dropdown: `claude-opus-5` (default), `claude-sonnet-5`, `claude-haiku-4-5`. Exact IDs, never
+Model dropdown: `claude-sonnet-5` (default), `claude-opus-5`, `claude-haiku-4-5`. Exact IDs, never
 date-suffixed. Send **incrementally** — previous state plus only transcript since the last call,
 never the whole window. Skip the call entirely if fewer than ~15 new words accumulated.
 
@@ -316,8 +320,9 @@ Multi-user anything. A build step or package manager.
 - The app must be fully functional with no API key. If a key is used it lives in `localStorage`,
   entered at runtime, never hardcoded — warn that a `file://` page offers no real secret protection
   and that a spend-limited personal key is advised.
-- Must run from `file://` in Chrome/Edge on Windows. Note in a comment that Chrome on macOS cannot
-  capture system audio at all (tab audio only).
+- Target: **Chrome/Edge on Windows, run from `file://`**. Build and tune for that. Note in a comment
+  that Chrome on macOS cannot capture system audio at all (tab audio only), so the system-audio path
+  is Windows-only.
 - Plain vanilla JS. No frameworks, no bundler, no CDN UI libraries.
 - Comment the non-obvious parts — especially the `onend` restart loop, the 16 kHz resampling, and
   the incremental-summarization state machine.
