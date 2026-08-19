@@ -417,6 +417,12 @@
   .pill.good{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
   .ackRow{display:flex;gap:9px;align-items:flex-start;margin-top:12px;padding:10px 12px;
     background:var(--bg);border-radius:var(--radius-sm);font-size:13px;line-height:1.45;cursor:pointer}
+  .doneBox{width:13px;height:13px;margin-right:7px;vertical-align:-1px;accent-color:var(--green);
+    flex:0 0 auto;cursor:pointer}
+  li.itemDone{opacity:.5;text-decoration:line-through;text-decoration-color:var(--txt-3)}
+  li.itemDone .carryTag,li.itemDone .autoTag,li.itemDone .segTag{text-decoration:none}
+  .carryTag{font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;
+    border-radius:3px;padding:0 4px;margin-left:6px;letter-spacing:.02em}
   .autoTag{font-size:9.5px;font-weight:700;color:var(--txt-3);background:var(--bg);border:1px solid var(--line);
     border-radius:3px;padding:0 4px;margin-left:6px;letter-spacing:.02em}
   .rmBtn{margin-left:6px;border:0;background:transparent;color:var(--txt-3);font-size:14px;line-height:1;
@@ -545,6 +551,8 @@
   @media (max-width:430px){
     #controls{gap:4px;padding:7px 9px}
     .btn{padding:5px 8px;font-size:12px}
+    .btn .k{display:none}                 /* hotkey hints are the first thing to go */
+    #btnExport span:not(.k),#btnNew span:not(.k){display:none}
     .switchLabel{display:none}
     #contextZone{padding:8px 9px 14px}
     #nowZone,#alertZone,#away{margin-left:9px;margin-right:9px}
@@ -1519,11 +1527,27 @@ function doSaveMeeting() {
 }
 
 function resetMeeting() {
-  MEET.startedAt = 0; MEET.frags = []; MEET.decisions = []; MEET.issues = []; MEET.actions = [];
+  /* An EOS to-do is a seven-day commitment reviewed at the NEXT meeting, so
+     wiping them on "New meeting" destroyed the thing the L10 exists to track.
+     Anything still open is carried forward and marked. */
+  var carried = MEET.actions.filter(function (a) { return !a.done; })
+    .map(function (a) {
+      return { text: a.text, owner: a.owner, mine: a.mine, due: a.due, t: now(),
+               segment: '', auto: a.auto, carried: true,
+               from: a.carried && a.from ? a.from : new Date(MEET.startedAt || now()).toLocaleDateString() };
+    }).slice(-40);
+  var openIssues = MEET.issues.filter(function (i) { return !i.done; })
+    .map(function (i) { return { text: i.text, t: now(), segment: '', auto: i.auto, carried: true }; }).slice(-40);
+
+  MEET.startedAt = 0; MEET.frags = []; MEET.decisions = []; MEET.issues = openIssues; MEET.actions = carried;
   MEET.glossary = []; MEET.timeline = []; MEET.alerts = [];
   MEET.cost = { inTok: 0, outTok: 0, calls: 0, usd: 0 };
   MEET.lastSentT = 0; MEET.llmTopic = ''; MEET.llmBullets = []; MEET.llmTalkingPoints = []; MEET.llmAt = 0;
   reindexItems();
+  if (carried.length || openIssues.length) {
+    toast(carried.length + ' open to-do' + (carried.length === 1 ? '' : 's') + ' and ' + openIssues.length +
+          ' unresolved issue' + (openIssues.length === 1 ? '' : 's') + ' carried into the new meeting.', 'ok', 8000);
+  }
   VIEW.topic = ''; VIEW.topicSrc = 'local'; VIEW.topicAt = 0; VIEW.bullets = [];
   VIEW.chips = []; VIEW.alert = null; VIEW.lastTopicVec = null; VIEW.lastChangeAt = 0;
   try { localStorage.removeItem(MEETING_KEY); } catch (e) {}
@@ -1543,7 +1567,7 @@ var VIEW = {
   captureMsg: '',
   sttMsg: '',
   api: { state: 'idle', latency: 0, msg: '', nextRetryAt: 0 },
-  lastTopicVec: null, lastChangeAt: 0,
+  lastTopicVec: null, lastChangeAt: 0, topicStart: 0,
   netCount: 0, netLog: []
 };
 
@@ -2008,6 +2032,7 @@ function mentionsMe(sent) {
 function pushTimeline(topic, src, t) {
   var last = MEET.timeline[MEET.timeline.length - 1];
   if (last && normKey(last.topic) === normKey(topic)) return;
+  VIEW.topicStart = t || now();
   MEET.timeline.push({ topic: topic, t: t || now(), src: src || 'local' });
   if (MEET.timeline.length > 200) MEET.timeline.shift();
   saveMeeting();
@@ -2047,6 +2072,12 @@ function addIssues(arr, auto) {
 
 /* Locally-detected items are removable in one click — a heuristic guess the
    facilitator has not confirmed should never be permanent. */
+/* Ticking a to-do or resolving an issue is what stops it carrying forward. */
+function toggleDone(kind, idx) {
+  var list = kind === 'iss' ? MEET.issues : MEET.actions;
+  if (idx >= 0 && idx < list.length) { list[idx].done = !list[idx].done; saveMeeting(); renderSoon(); }
+}
+
 function removeItem(kind, idx) {
   var list = kind === 'dec' ? MEET.decisions : (kind === 'iss' ? MEET.issues : MEET.actions);
   if (idx >= 0 && idx < list.length) { list.splice(idx, 1); saveMeeting(); renderSoon(); }
@@ -3608,8 +3639,15 @@ function renderNow() {
     src.textContent = VIEW.topicSrc === 'claude' ? 'claude' : 'local';
     src.className = 'srcTag ' + (VIEW.topicSrc === 'claude' ? 'claude' : 'local');
     src.classList.remove('hidden');
-    meta.textContent = 'updated ' + agoText(VIEW.topicAt) +
-      (VIEW.topicSrc === 'local' ? ' · derived on-device from the last ' + CFG.windowMin + ' min' : '');
+    /* During IDS the failure mode is one issue eating the hour, so show how
+       long the current topic has been running rather than how fresh it is. */
+    if (CFG.segment === 'IDS' && VIEW.topicStart) {
+      meta.textContent = 'On this issue for ' + clockText(now() - VIEW.topicStart) +
+        ' · updated ' + agoText(VIEW.topicAt);
+    } else {
+      meta.textContent = 'updated ' + agoText(VIEW.topicAt) +
+        (VIEW.topicSrc === 'local' ? ' · derived on-device from the last ' + CFG.windowMin + ' min' : '');
+    }
   } else {
     t.classList.add('idle');
     src.classList.add('hidden');
@@ -3818,18 +3856,29 @@ function renderPanels() {
                tags(o.d, 'dec', o.i) + '</li>'; }).join('')
     : '<li class="none">None yet.</li>';
 
-  setCount('cIssues', MEET.issues.length);
+  var openIss = MEET.issues.filter(function (x) { return !x.done; }).length;
+  setCount('cIssues', openIss);
   $('lIssues').innerHTML = MEET.issues.length
     ? MEET.issues.map(function (d, i) { return { d: d, i: i }; }).reverse().map(function (o) {
-        return '<li>' + esc(o.d.text) + '<span class="who">' + hhmm(o.d.t) + '</span>' +
+        return '<li class="' + (o.d.done ? 'itemDone' : '') + '">' +
+               '<input type="checkbox" class="doneBox" data-done="iss" data-i="' + o.i + '"' +
+               (o.d.done ? ' checked' : '') + ' title="Mark solved">' +
+               esc(o.d.text) + '<span class="who">' + hhmm(o.d.t) + '</span>' +
+               (o.d.carried ? '<span class="carryTag">carried</span>' : '') +
                tags(o.d, 'iss', o.i) + '</li>'; }).join('')
     : '<li class="none">None yet.</li>';
 
-  setCount('cActions', MEET.actions.length);
+  var openAct = MEET.actions.filter(function (x) { return !x.done; }).length;
+  setCount('cActions', openAct);
   $('lActions').innerHTML = MEET.actions.length
     ? MEET.actions.map(function (a, i) { return { a: a, i: i }; }).reverse().map(function (o) {
         var a = o.a;
-        return '<li class="' + (a.mine ? 'mine' : '') + '">' + esc(a.text) +
+        return '<li class="' + (a.mine ? 'mine ' : '') + (a.done ? 'itemDone' : '') + '">' +
+          '<input type="checkbox" class="doneBox" data-done="act" data-i="' + o.i + '"' +
+          (a.done ? ' checked' : '') + ' title="Mark done">' +
+          esc(a.text) +
+          (a.carried ? '<span class="carryTag" title="Carried from ' + esc(a.from || 'a previous meeting') +
+                       '">carried</span>' : '') +
           '<span class="who">' + (a.mine ? 'MINE' : (a.owner ? esc(a.owner) : 'owner?')) + '</span>' +
           (a.due ? '<span class="who">due ' + esc(a.due) + '</span>' : '') +
           tags(a, 'act', o.i) + '</li>';
@@ -4011,6 +4060,8 @@ function exportMarkdown() {
   L.push('');
 
   L.push('## To-dos');
+  L.push('_Unticked items carry into the next meeting._');
+  L.push('');
   if (MEET.actions.length) {
     var mine = MEET.actions.filter(function (a) { return a.mine; });
     var other = MEET.actions.filter(function (a) { return !a.mine; });
@@ -4376,6 +4427,11 @@ function bindUI() {
     var b = e.target.closest ? e.target.closest('.rmBtn') : null;
     if (!b) return;
     removeItem(b.getAttribute('data-rm'), parseInt(b.getAttribute('data-i'), 10));
+  });
+  $('contextZone').addEventListener('change', function (e) {
+    var c = e.target;
+    if (!c || !c.classList || !c.classList.contains('doneBox')) return;
+    toggleDone(c.getAttribute('data-done'), parseInt(c.getAttribute('data-i'), 10));
   });
 
   /* roster */
