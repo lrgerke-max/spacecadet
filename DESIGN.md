@@ -61,7 +61,43 @@ tells you what's going on. Do not couple them.
 - `file://` permissions do not persist — expect to re-grant mic access each launch.
 - Corporate proxies may block `api.anthropic.com` or `cdn.jsdelivr.net`. Phase 0 checks both.
 
-## Cost
+## Subscription vs. API — the billing reality
+
+**A Claude Pro subscription does not include API access.** They are separately billed products.
+Pro covers claude.ai and Claude Code; `api.anthropic.com` draws on pay-as-you-go credits purchased
+at console.anthropic.com. No header, endpoint, or auth mode makes a Pro subscription pay for API
+calls.
+
+Claude Code spends a subscription via OAuth (`ant auth login` → bearer token + the
+`oauth-2025-04-20` beta header), but that requires the CLI installed locally — impossible on a
+browser-only machine, so it is moot here.
+
+**Consequence: the LLM must be optional.** The app ships three summarizer backends:
+
+| Backend | Cost | How |
+|---|---|---|
+| `handoff` (default) | free | Builds the prompt, copies to clipboard, opens claude.ai. Pro pays. |
+| `api` | see below | Ambient 90s auto-summary. Needs credits. |
+| `local` | free | Nothing leaves the machine. |
+
+All three feed identical rendering code; the UI never knows which produced the state.
+
+## The local layer does more than expected
+
+Because the default backend is on-demand rather than ambient, the free local layer carries the app
+between handoffs — and it is more capable than it first appears:
+
+- **Live transcript tail.** The last ~30s in large type. Reading three recent sentences usually
+  answers "what are they talking about" outright. Highest value-per-line feature in the app.
+- **Keyword chips.** Crude TF-IDF over the window. Three salient nouns communicate a subject fast.
+- **Topic-change detection.** Cosine similarity between consecutive 60s term-frequency vectors;
+  below ~0.35, flash. No model required.
+- **Name and question alerts.** Regex. The most time-critical feature, and it never touches a network.
+
+The genuinely hard problem was always speech-to-text, not summarization — which is why removing the
+LLM costs less than intuition suggests.
+
+## Cost, if the `api` backend is enabled
 
 At a 90-second cycle, ~700 input / ~250 output tokens per call, ~40 calls/hour:
 
@@ -70,8 +106,8 @@ At a 90-second cycle, ~700 input / ~250 output tokens per call, ~40 calls/hour:
 | `claude-opus-5` | $0.50 – $0.80 |
 | `claude-haiku-4-5` | ~$0.08 |
 
-Opus 5 is the default for summary quality; the model dropdown makes switching a one-click
-experiment. Set a spend limit on the key regardless.
+Silence triggers no calls, so real usage lands lower. Worth knowing before dismissing it: at Haiku
+pricing, $5 of credit covers roughly sixty hours of meetings.
 
 ## Discretion
 
