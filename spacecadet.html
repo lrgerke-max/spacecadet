@@ -214,11 +214,18 @@
   #awayClose{margin-left:auto;flex:0 0 auto}
 
   #alertZone{
-    /* A column: the content scrolls, the action row never does. min-height stops
-       it collapsing to a sliver on a short viewport and taking its own buttons
-       out of the box with it. */
-    flex:0 1 auto;display:flex;flex-direction:column;
-    min-height:112px;max-height:52vh;overflow:hidden;
+    /* A column: the content scrolls, the action row never does.
+       flex-shrink is 0 on purpose. This is the highest-priority element on the
+       screen, and with shrink enabled it was squeezed by everything below it —
+       clipping the context and reference resolution, which is the whole reason
+       the alert is worth showing. The scrolling #contextZone absorbs the
+       shortfall instead; it is the thing that should yield. */
+    flex:0 0 auto;display:flex;flex-direction:column;min-height:112px;overflow:hidden;
+    /* The cap has to know about the chrome above it. A flat 52vh is right on a
+       tall window but taller than the space that actually exists on a short one,
+       where it pushed its own action row off-screen. Whichever is smaller wins,
+       with a floor so it never becomes useless. */
+    max-height:max(132px, min(52vh, calc(100vh - 250px)));
     margin:10px 12px 0;padding:13px 14px;border-radius:var(--radius);
     background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid var(--red);
     box-shadow:0 2px 10px rgba(220,38,38,.10);animation:alertIn .16s ease-out;
@@ -276,6 +283,34 @@
     color:var(--txt-2);border:1px solid var(--line);font-weight:500}
   .srcTag.claude{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
   .srcTag.local{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+
+  /* what just happened / open issue — the two zones that let someone rejoin */
+  #happenedZone,#issueZone{
+    flex:0 0 auto;margin:8px 12px 0;padding:11px 14px;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  }
+  #happenedText{font-size:14px;line-height:1.55;color:var(--txt);overflow-wrap:anywhere}
+  #happenedText.raw{color:var(--txt-2);font-style:italic}
+  #issueZone{border-left:3px solid var(--amber);background:#fffdf7}
+  #issueZone.decision{border-left-color:var(--purple);background:#fbfaff}
+  #issueZone.disagreement{border-left-color:var(--red);background:#fffaf9}
+  #issueText{font-size:15px;line-height:1.45;font-weight:600;color:var(--txt);overflow-wrap:anywhere}
+  #issueLabel{color:#a16207}
+  #issueZone.decision #issueLabel{color:#6d28d9}
+  #issueZone.disagreement #issueLabel{color:#b91c1c}
+  .confTag{font-size:9.5px;font-weight:700;border-radius:3px;padding:0 5px;margin-left:6px;
+    border:1px solid;letter-spacing:.02em}
+  .confTag.high{color:#047857;background:#ecfdf5;border-color:#a7f3d0}
+  .confTag.medium{color:#a16207;background:#fffbeb;border-color:#fde68a}
+  .confTag.low{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+
+  /* blocks inside the alert */
+  .alertBlock{margin-top:8px;font-size:13px;line-height:1.45;color:#450a0a}
+  #alertZone.soft .alertBlock{color:#451a03}
+  .alertBlock .ab{display:block;font-size:9.5px;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;color:#b91c1c;margin-bottom:2px}
+  #alertZone.soft .alertBlock .ab{color:#b45309}
+  #alertRefText.unclear{font-style:italic;opacity:.85}
 
   /* ============================================================== chips */
   #chips{display:flex;flex-wrap:wrap;gap:5px;min-height:26px}
@@ -642,6 +677,12 @@
         <div id="alertAgo">just now</div>
       </div>
       <div id="alertQ"></div>
+      <div id="alertCtx" class="alertBlock hidden">
+        <span class="ab">Context</span><span id="alertCtxText"></span></div>
+      <div id="alertRef" class="alertBlock hidden">
+        <span class="ab" id="alertRefLabel">What "that" means</span><span id="alertRefText"></span></div>
+      <div id="alertDir" class="alertBlock hidden">
+        <span class="ab">Likely response</span><span id="alertDirText"></span></div>
       <ul id="alertPoints"></ul>
     </div>
     <div id="alertBar">
@@ -660,6 +701,19 @@
     </div>
     <h1 id="topic" class="idle">Not listening yet</h1>
     <div id="topicMeta">Press <span class="kbd">L</span> or click “Start listening”. No API key needed.</div>
+  </section>
+
+  <!-- What someone who looked away needs before anything else. -->
+  <section id="happenedZone" class="hidden">
+    <div class="zoneLabel"><span>What just happened</span>
+      <span class="meta" id="happenedMeta"></span></div>
+    <div id="happenedText"></div>
+  </section>
+
+  <!-- Only rendered when something is genuinely unresolved. -->
+  <section id="issueZone" class="hidden">
+    <div class="zoneLabel"><span id="issueLabel">Open issue</span></div>
+    <div id="issueText"></div>
   </section>
 
   <!-- -------------------------------------------------------- CONTEXT -->
@@ -1119,14 +1173,66 @@ var PRICES = {
   'claude-haiku-4-5': { in: 1.00, out:  5.00, label: 'Haiku 4.5'}
 };
 
-/* Structured-output contract for the api backend. */
+/* CONVERSATIONAL STATE CONTRACT
+   This is deliberately NOT a summarisation schema. The old one asked for topic
+   + bullets + artifacts, which is what a meeting-notes tool wants. What someone
+   re-entering a conversation needs instead is state: what is live right now,
+   what just happened, what is unresolved, whether they are on the hook, and —
+   the hard part — what the pronoun in the question actually points at.
+
+   Every interpretive field carries its own confidence, and reference resolution
+   has an explicit UNCLEAR value, because a confident wrong answer about what
+   "that" means is worse than admitting the ambiguity. */
 var RESPONSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['topic','topic_changed','bullets','user_addressed','talking_points','decisions','actions','issues','glossary'],
+  required: ['topic','topic_changed','what_just_happened','active_issue','question',
+             'bullets','user_addressed','talking_points','decisions','actions','issues','glossary','confidence'],
   properties: {
     topic: { type: 'string' },
     topic_changed: { type: 'boolean' },
+
+    /* Two or three sentences reconstructing the last 60-120 seconds, named
+       speakers where known. This is the field that lets someone who looked away
+       rejoin without reading a transcript. */
+    what_just_happened: { type: 'string' },
+
+    /* Only when something is genuinely unresolved. "none" is the common case
+       and must not be padded with a manufactured issue. */
+    active_issue: {
+      type: ['object','null'],
+      additionalProperties: false,
+      required: ['kind','text'],
+      properties: {
+        kind: { type: 'string', enum: ['open_question','decision_being_discussed','disagreement','none'] },
+        text: { type: 'string' }
+      }
+    },
+
+    /* The live question, whoever it is aimed at. Targeting is explicit rather
+       than a boolean, so "someone asked the group" is distinguishable from
+       "someone asked YOU" — only the second one earns the alarm. */
+    question: {
+      type: ['object','null'],
+      additionalProperties: false,
+      required: ['asked_by','target','text','context','reference','reference_resolution',
+                 'response_direction','confidence'],
+      properties: {
+        asked_by: { type: 'string' },
+        target: { type: 'string', enum: ['user','other_person','group','unclear'] },
+        text: { type: 'string' },
+        /* what the user needs to know to answer, not a summary of the meeting */
+        context: { type: 'string' },
+        /* the referring expression itself: "that", "the numbers", "" if none */
+        reference: { type: 'string' },
+        /* what it points at, or exactly "UNCLEAR" — never a guess dressed up */
+        reference_resolution: { type: 'string' },
+        /* the SHAPE of an answer the user could give. Never an answer for them. */
+        response_direction: { type: 'string' },
+        confidence: { type: 'string', enum: ['high','medium','low'] }
+      }
+    },
+
     bullets: { type: 'array', items: { type: 'string' } },
     user_addressed: {
       type: ['object','null'],
@@ -1139,6 +1245,7 @@ var RESPONSE_SCHEMA = {
       }
     },
     talking_points: { type: 'array', items: { type: 'string' } },
+    confidence: { type: 'string', enum: ['high','medium','low'] },
     decisions: { type: 'array', items: { type: 'string' } },
     issues: { type: 'array', items: { type: 'string' } },
     actions: {
@@ -1171,11 +1278,16 @@ var RESPONSE_SCHEMA = {
    so a pasted prompt behaves identically to an ambient call. */
 function buildSystemPrompt(profile, context) {
   return [
-'You help someone who has lost focus in a live meeting re-enter the conversation quickly.',
+'You are the conversational-state engine for a real-time meeting assistant.',
+'',
+'The person reading your output may have just realised they stopped paying attention. They need',
+'to understand the CURRENT STATE of the conversation in about five seconds and rejoin it. You are',
+'not writing meeting minutes. You are reconstructing state for an instrument panel.',
 '',
 'You receive your own previous state, plus a new chunk of rough speech-to-text transcript.',
-'The transcript is machine-generated: expect misheard words, missing punctuation, no speaker',
-'labels, and dropped words. Infer intent. Never quote transcription errors back verbatim.',
+'The transcript is machine-generated: expect misheard words, missing punctuation, and dropped',
+'words. Speaker names appear as "Name:" when known. Infer intent. Never quote transcription',
+'errors back verbatim.',
 '',
 'USER PROFILE:',
 (profile && profile.trim()) || '(none given)',
@@ -1183,10 +1295,36 @@ function buildSystemPrompt(profile, context) {
 'MEETING CONTEXT (agenda, attendees, projects — may be empty):',
 (context && context.trim()) || '(none given)',
 '',
+'Work out, in order:',
+'  1. What is being discussed RIGHT NOW?',
+'  2. What happened in the last 60-120 seconds?',
+'  3. What issue or decision is currently live?',
+'  4. Is anyone asking a question, and WHO is it aimed at?',
+'  5. If it is aimed at the user: what exactly are they being asked?',
+'  6. Does that question contain a reference — "that", "this", "it", "the report", "the numbers"?',
+'  7. What earlier part of the conversation makes that reference resolvable?',
+'  8. How confident are you in each of the above?',
+'',
 'Rules:',
 '- topic: 3-8 words naming what is being discussed at the END of the chunk. Not a summary of the',
 '  whole chunk — what they are on RIGHT NOW.',
 '- topic_changed: true only if meaningfully different from the previous topic. Ignore drift.',
+'- what_just_happened: 2-3 plain sentences reconstructing the last minute or two, naming speakers',
+'  where you know them ("Sarah raised... Mike suggested... they are now weighing..."). Written so',
+'  someone who looked away can rejoin. Not a bullet list, not a summary of the whole meeting.',
+'- active_issue: only when something is genuinely unresolved or being decided. kind "none" with',
+'  empty text is correct and common. Never manufacture an issue to fill the field.',
+'- question: the live question if there is one, whoever it is aimed at.',
+'  * target: "user" ONLY when they are named or unambiguously addressed. "other_person" when it is',
+'    aimed at someone else by name. "group" for an open question to the room. "unclear" when you',
+'    cannot tell. Be conservative: a false "user" is the worst error you can make here.',
+'  * context: the 1-2 sentences of earlier conversation the user needs to answer. Not the whole topic.',
+'  * reference: the exact referring expression if the question contains one, else "".',
+'  * reference_resolution: what it points to, resolved from EARLIER transcript — this is the whole',
+'    point, and the referent is often several minutes back. If you cannot resolve it confidently,',
+'    return exactly "UNCLEAR". Never invent a referent.',
+'  * response_direction: the SHAPE of a reply the user could give ("give your read on whether we',
+'    can recruit in time"). Never write the answer for them.',
 '- bullets: 3-5 bullets covering the recent window, most recent first, each under 20 words.',
 '  Plain language. No preamble, no "the team discussed".',
 '- user_addressed: non-null ONLY if the user was directly asked something, assigned something, or',
@@ -1203,8 +1341,13 @@ function buildSystemPrompt(profile, context) {
 '- decisions / actions / issues / glossary: only NEW items from this chunk. Never repeat items',
 '  you have already reported. Empty arrays are correct and expected most of the time.',
 '- glossary: only genuinely non-obvious acronyms, jargon, or proper nouns.',
+'- confidence: your overall confidence in this reconstruction. Say "low" freely — the panel shows',
+'  it, and a hedged reading the user can discount beats a confident wrong one.',
 '- If the chunk is silence, filler, or crosstalk with no substance: repeat the previous topic',
-'  unchanged and return empty arrays.'
+'  unchanged, return null for question and active_issue, and return empty arrays.',
+'',
+'Never invent missing information. When something is ambiguous, name the ambiguity instead of',
+'resolving it. Be concise: this is read at a glance, not studied.'
   ].join('\n');
 }
 
@@ -1437,6 +1580,11 @@ var MEET = {
   cost: { inTok: 0, outTok: 0, calls: 0, usd: 0 },
   lastSentT: 0,       // incremental-summarisation watermark
   llmTopic: '',
+  /* The reconstructed conversational state. Persisted with the meeting so a
+     refresh mid-conversation does not lose the thread. */
+  convo: { happened: '', happenedAt: 0, issueKind: 'none', issueText: '',
+           question: null, confidence: '', at: 0 },
+  questionLog: [],   // {t,text,target,askedBy,...} — recent questions, any target
   llmBullets: [],
   llmTalkingPoints: [],
   llmAt: 0
@@ -1480,6 +1628,18 @@ function restoreMeeting() {
     MEET.llmBullets = arrOf(p.llmBullets, function (x) { return typeof x === 'string'; });
     MEET.llmTalkingPoints = arrOf(p.llmTalkingPoints, function (x) { return typeof x === 'string'; });
     MEET.llmAt = isFinite(p.llmAt) ? +p.llmAt : 0;
+    var pc = p.convo;
+    MEET.convo = (pc && typeof pc === 'object') ? {
+      happened: typeof pc.happened === 'string' ? pc.happened : '',
+      happenedAt: isFinite(pc.happenedAt) ? +pc.happenedAt : 0,
+      issueKind: typeof pc.issueKind === 'string' ? pc.issueKind : 'none',
+      issueText: typeof pc.issueText === 'string' ? pc.issueText : '',
+      question: (pc.question && typeof pc.question === 'object' && typeof pc.question.text === 'string')
+                ? pc.question : null,
+      confidence: typeof pc.confidence === 'string' ? pc.confidence : '',
+      at: isFinite(pc.at) ? +pc.at : 0
+    } : { happened: '', happenedAt: 0, issueKind: 'none', issueText: '', question: null, confidence: '', at: 0 };
+    MEET.questionLog = arrOf(p.questionLog, function (q) { return q && typeof q.text === 'string'; }).slice(-30);
     reindexItems();
     return true;
   } catch (e) { return false; }
@@ -1504,6 +1664,7 @@ function doSaveMeeting() {
       savedAt: now(),
       startedAt: MEET.startedAt,
       frags: MEET.frags.slice(-n),
+      convo: MEET.convo, questionLog: MEET.questionLog.slice(-30),
       decisions: MEET.decisions.slice(-itemCap), issues: MEET.issues.slice(-itemCap),
       actions: MEET.actions.slice(-itemCap), glossary: MEET.glossary.slice(-itemCap),
       timeline: MEET.timeline.slice(-200), alerts: MEET.alerts.slice(-40), cost: MEET.cost,
@@ -1543,6 +1704,9 @@ function resetMeeting() {
   MEET.glossary = []; MEET.timeline = []; MEET.alerts = [];
   MEET.cost = { inTok: 0, outTok: 0, calls: 0, usd: 0 };
   MEET.lastSentT = 0; MEET.llmTopic = ''; MEET.llmBullets = []; MEET.llmTalkingPoints = []; MEET.llmAt = 0;
+  MEET.convo = { happened: '', happenedAt: 0, issueKind: 'none', issueText: '',
+                 question: null, confidence: '', at: 0 };
+  MEET.questionLog = [];
   reindexItems();
   if (carried.length || openIssues.length) {
     toast(carried.length + ' open to-do' + (carried.length === 1 ? '' : 's') + ' and ' + openIssues.length +
@@ -1882,11 +2046,28 @@ function fireAlert(a) {
   if (VIEW.alert && VIEW.alert.severity === 'hard' && a.severity === 'soft' &&
       (now() - VIEW.alert.at) < 20000) return;
 
-  /* Consecutive api calls can report the same question twice. Re-raising it would
-     reset the "how long ago" clock and lie about when it was asked. */
+  /* THE FAST/SLOW HANDOFF.
+     The local regex fires within milliseconds of the question being spoken, with
+     no context. Claude's reconstruction of the SAME question arrives seconds
+     later carrying what the user actually needs — the context, what the pronoun
+     refers to, the shape of a reply. Treating that as a duplicate threw away the
+     entire point of the slow loop.
+
+     So a repeat of the same question UPGRADES the alert in place: richer fields
+     are adopted, but `at` is preserved so "8s ago" keeps telling the truth about
+     when it was asked rather than when Claude got round to it. */
   if (VIEW.alert && a.question && normKey(VIEW.alert.question) === normKey(a.question) &&
       (now() - VIEW.alert.at) < 120000) {
-    if (a.points && a.points.length) { VIEW.alert.points = a.points; VIEW.alert.pointsAre = 'talking points from Claude'; }
+    var cur = VIEW.alert;
+    if (a.convo && !cur.convo) cur.convo = a.convo;          // context + reference resolution
+    if (a.who && !cur.who) cur.who = a.who;                   // Claude often knows who asked
+    if (a.src === 'claude') cur.src = 'claude';
+    if (a.points && a.points.length) { cur.points = a.points; cur.pointsAre = 'talking points from Claude'; }
+    /* Claude's phrasing of the question is cleaner than the raw transcript slice
+       the regex grabbed, so prefer it once it arrives. */
+    if (a.question && (a.src === 'claude' || a.question.length > (cur.question || '').length)) {
+      cur.question = a.question;
+    }
     renderSoon();
     return;
   }
@@ -3027,6 +3208,49 @@ function applyLLMState(obj, src) {
 
   MEET.llmTalkingPoints = Array.isArray(obj.talking_points) ? obj.talking_points.slice(0, 3).map(String) : [];
 
+  /* ---- conversational state ---- */
+  if (typeof obj.what_just_happened === 'string' && obj.what_just_happened.trim()) {
+    MEET.convo.happened = obj.what_just_happened.trim().slice(0, 600);
+    MEET.convo.happenedAt = t;
+  }
+  if (obj.active_issue && typeof obj.active_issue === 'object') {
+    var akind = String(obj.active_issue.kind || 'none');
+    var atext = String(obj.active_issue.text || '').trim().slice(0, 300);
+    MEET.convo.issueKind = (akind === 'none' || !atext) ? 'none' : akind;
+    MEET.convo.issueText = MEET.convo.issueKind === 'none' ? '' : atext;
+  } else { MEET.convo.issueKind = 'none'; MEET.convo.issueText = ''; }
+  if (typeof obj.confidence === 'string') MEET.convo.confidence = obj.confidence;
+  MEET.convo.at = t;
+
+  /* Every question is logged whoever it was aimed at, so the user can recover
+     one they half-heard. Only a question aimed AT THEM raises the alarm. */
+  if (obj.question && typeof obj.question === 'object' && String(obj.question.text || '').trim()) {
+    var q = {
+      text: String(obj.question.text).trim().slice(0, 300),
+      askedBy: String(obj.question.asked_by || '').slice(0, 60),
+      target: String(obj.question.target || 'unclear'),
+      context: String(obj.question.context || '').slice(0, 400),
+      reference: String(obj.question.reference || '').slice(0, 60),
+      resolution: String(obj.question.reference_resolution || '').slice(0, 300),
+      direction: String(obj.question.response_direction || '').slice(0, 300),
+      confidence: String(obj.question.confidence || 'low'),
+      t: t
+    };
+    MEET.convo.question = q;
+    var qk = normKey(q.text);
+    if (!MEET.questionLog.some(function (x) { return normKey(x.text) === qk; })) {
+      MEET.questionLog.push(q);
+      if (MEET.questionLog.length > 30) MEET.questionLog.shift();
+    }
+    if (q.target === 'user') {
+      fireAlert({
+        kind: 'direct_question', severity: 'hard',
+        who: q.askedBy, question: q.text, at: t,
+        points: MEET.llmTalkingPoints.slice(), src: 'claude', convo: q
+      });
+    }
+  } else { MEET.convo.question = null; }
+
   addDecisions(obj.decisions);
   addIssues(obj.issues);
   addActions(obj.actions);
@@ -3570,6 +3794,8 @@ function render() {
   syncSettingsInert();      // single source of truth: the settingsOpen class
   renderStatusBar();
   renderNow();
+  renderHappened();
+  renderIssue();
   renderAlert();
   renderChips();
   renderBullets();
@@ -3661,6 +3887,58 @@ function renderNow() {
   }
 }
 
+/* Without an LLM there is nothing to summarise with, so rather than leave the
+   zone blank or fake a summary, show the last few substantive things actually
+   said — labelled as raw speech, not as a reconstruction. */
+function recentSpeechDigest() {
+  var cut = now() - 120000;
+  var recent = MEET.frags.filter(function (f) { return f.t >= cut; });
+  if (recent.length < 2) recent = MEET.frags.slice(-6);
+  var out = [], lastSpk = null;
+  for (var i = recent.length - 1; i >= 0 && out.length < 3; i--) {
+    var f = recent[i];
+    var sents = sentencesOf(f.text);
+    var sent = sents.length ? sents[sents.length - 1] : '';
+    if (!sent || wordCount(sent) < 5) continue;
+    var who = f.spk ? speakerName(f.spk) : '';
+    out.unshift((who && who !== lastSpk ? who + ': ' : '') + sent);
+    lastSpk = who;
+  }
+  return out.join('  ');
+}
+
+function renderHappened() {
+  var zone = $('happenedZone'), txt = $('happenedText'), meta = $('happenedMeta');
+  var c = MEET.convo || {};
+  var fresh = c.happened && (now() - c.happenedAt) < 300000;
+
+  if (fresh) {
+    txt.textContent = c.happened;
+    txt.classList.remove('raw');
+    meta.innerHTML = agoText(c.happenedAt) +
+      (c.confidence ? '<span class="confTag ' + esc(c.confidence) + '">' + esc(c.confidence) + ' confidence</span>' : '');
+    zone.classList.remove('hidden');
+    return;
+  }
+  var digest = recentSpeechDigest();
+  if (!digest) { zone.classList.add('hidden'); return; }
+  txt.textContent = digest;
+  txt.classList.add('raw');
+  meta.textContent = 'last things said — no summary without Claude';
+  zone.classList.remove('hidden');
+}
+
+function renderIssue() {
+  var zone = $('issueZone'), c = MEET.convo || {};
+  if (!c.issueText || c.issueKind === 'none') { zone.classList.add('hidden'); return; }
+  zone.classList.remove('hidden', 'decision', 'disagreement');
+  var label = 'Open issue';
+  if (c.issueKind === 'decision_being_discussed') { label = 'Decision being discussed'; zone.classList.add('decision'); }
+  else if (c.issueKind === 'disagreement') { label = 'Disagreement'; zone.classList.add('disagreement'); }
+  $('issueLabel').textContent = label;
+  $('issueText').textContent = c.issueText;
+}
+
 function renderAlert() {
   var z = $('alertZone');
   var a = VIEW.alert;
@@ -3690,8 +3968,38 @@ function renderAlert() {
     ul.appendChild(li);
   });
 
-  $('alertSrc').textContent = (a.src === 'claude' ? 'flagged by Claude' : 'local match: ' + (a.matched || 'pattern')) +
-    (a.pointsAre ? ' · ' + a.pointsAre : '');
+  /* When Claude resolved the question, show what it worked out: the context
+     needed to answer, what the pronoun points at, and the shape of a reply.
+     Reference resolution is the whole point — a question about "that" is
+     useless without knowing what "that" was. */
+  var cv = a.convo;
+  function blk(id, textId, val, cls) {
+    if (val && String(val).trim()) {
+      $(textId).textContent = val;
+      if (cls !== undefined) $(textId).className = cls;
+      $(id).classList.remove('hidden');
+    } else { $(id).classList.add('hidden'); }
+  }
+  if (cv) {
+    blk('alertCtx', 'alertCtxText', cv.context);
+    var unresolved = !cv.resolution || cv.resolution.toUpperCase() === 'UNCLEAR';
+    if (cv.reference) {
+      $('alertRefLabel').textContent = 'What \u201c' + cv.reference + '\u201d means';
+      blk('alertRef', 'alertRefText',
+          unresolved ? 'Reference unclear — nothing earlier resolves it confidently.' : cv.resolution,
+          unresolved ? 'unclear' : '');
+    } else { $('alertRef').classList.add('hidden'); }
+    blk('alertDir', 'alertDirText', cv.direction);
+  } else {
+    $('alertCtx').classList.add('hidden');
+    $('alertRef').classList.add('hidden');
+    $('alertDir').classList.add('hidden');
+  }
+
+  $('alertSrc').innerHTML =
+    esc(a.src === 'claude' ? 'flagged by Claude' : 'local match: ' + (a.matched || 'pattern')) +
+    (a.pointsAre ? esc(' · ' + a.pointsAre) : '') +
+    (cv && cv.confidence ? '<span class="confTag ' + esc(cv.confidence) + '">' + esc(cv.confidence) + '</span>' : '');
 }
 
 function highlightNames(s) {
@@ -4565,6 +4873,17 @@ function init() {
 
   var restored = restoreMeeting();
   if (restored) {
+    /* If the browser was refreshed while a question aimed at the user was still
+       live, bring the alert back rather than losing it. Being asked something is
+       precisely the state you cannot afford to drop on a reload. */
+    var rq = MEET.convo && MEET.convo.question;
+    if (rq && rq.target === 'user' && (now() - (rq.t || 0)) < CFG.alertTtlSec * 1000) {
+      VIEW.alert = {
+        kind: 'direct_question', severity: 'hard', who: rq.askedBy || '',
+        question: rq.text, at: rq.t || now(), points: MEET.llmTalkingPoints || [],
+        src: 'claude', convo: rq, pointsAre: ''
+      };
+    }
     VIEW.topic = MEET.llmTopic || '';
     VIEW.topicSrc = MEET.llmTopic ? 'claude' : 'local';
     VIEW.topicAt = MEET.llmAt || now();
