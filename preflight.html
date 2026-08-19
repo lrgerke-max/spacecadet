@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Spacecadet preflight</title>
+<style>
+  body{background:#0e1116;color:#e6edf3;font:15px/1.6 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px}
+  h1{font-size:22px;margin-bottom:4px} p.sub{color:#8b949e;margin-top:0}
+  .t{border:1px solid #30363d;border-radius:8px;padding:14px 16px;margin:10px 0}
+  .t h2{font-size:15px;margin:0 0 6px} .r{font-family:ui-monospace,monospace;font-size:13px;white-space:pre-wrap}
+  .ok{color:#3fb950} .bad{color:#f85149} .warn{color:#d29922} .pending{color:#8b949e}
+  button{background:#238636;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;margin-top:8px}
+  button.alt{background:#1f6feb}
+</style>
+<h1>Spacecadet preflight</h1>
+<p class="sub">Checks what your corporate network and browser actually allow, before building anything.</p>
+
+<div class="t"><h2>1. Secure context (needed for mic/screen capture)</h2><div class="r" id="r1">…</div></div>
+<div class="t"><h2>2. Anthropic API reachable + CORS from this page</h2><div class="r" id="r2">…</div></div>
+<div class="t"><h2>3. transformers.js CDN reachable (local Whisper path)</h2><div class="r" id="r3">…</div></div>
+<div class="t"><h2>4. Web Speech API present</h2><div class="r" id="r4">…</div></div>
+<div class="t"><h2>5. Microphone</h2><div class="r" id="r5">Click to test.</div>
+  <button onclick="testMic()">Test microphone</button></div>
+<div class="t"><h2>6. System / tab audio capture</h2><div class="r" id="r6">Click, then pick a screen or tab — and tick "share audio".</div>
+  <button class="alt" onclick="testDisplay()">Test system audio</button></div>
+
+<script>
+const set=(id,cls,msg)=>{const e=document.getElementById(id);e.className='r '+cls;e.textContent=msg};
+
+set('r1', isSecureContext?'ok':'bad',
+    (isSecureContext?'PASS — ':'FAIL — ')+'isSecureContext = '+isSecureContext+'  |  origin: '+(location.origin||'null (file://)'));
+
+// 2. Real CORS preflight from this page's origin.
+fetch('https://api.anthropic.com/v1/messages',{
+  method:'POST',
+  headers:{'content-type':'application/json','x-api-key':'preflight-not-a-real-key',
+           'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+  body:JSON.stringify({model:'claude-opus-5',max_tokens:1,messages:[{role:'user',content:'hi'}]})
+}).then(r=>r.status===401
+  ? set('r2','ok','PASS — reached the API and CORS allowed this origin.\nGot 401 (bad key), which is exactly right for a key-less probe.')
+  : set('r2','warn','Reachable, but unexpected status '+r.status+'. CORS is fine; check the response.'))
+ .catch(e=>set('r2','bad','FAIL — blocked before any response: '+e.message+
+   '\nUsually a corporate proxy or TLS interception. Claude summarization will not work from this laptop.'));
+
+// 3. CDN reachability
+fetch('https://cdn.jsdelivr.net/npm/@huggingface/transformers/package.json',{cache:'no-store'})
+ .then(r=>r.ok?r.json():Promise.reject(new Error('status '+r.status)))
+ .then(j=>set('r3','ok','PASS — CDN reachable. transformers.js '+j.version+' available.\nLocal Whisper (audio never leaves the laptop) is possible.'))
+ .catch(e=>set('r3','warn','BLOCKED — '+e.message+
+   '\nLocal Whisper is out. Fall back to the Web Speech API (mic only, audio goes to Google).'));
+
+// 4
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+set('r4', SR?'ok':'bad', SR?'PASS — webkitSpeechRecognition available.':'FAIL — not available. Use Chrome or Edge.');
+
+async function testMic(){
+  set('r5','pending','Requesting…');
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
+    const t=s.getAudioTracks()[0];
+    set('r5','ok','PASS — mic granted.\nDevice: '+t.label+'\nechoCancellation actually applied: '+JSON.stringify(t.getSettings().echoCancellation));
+    s.getTracks().forEach(x=>x.stop());
+  }catch(e){ set('r5','bad','FAIL — '+e.name+': '+e.message); }
+}
+
+async function testDisplay(){
+  set('r6','pending','Requesting…');
+  try{
+    const s=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+    const a=s.getAudioTracks();
+    if(!a.length){
+      set('r6','bad','NO AUDIO TRACK — the picker was shown but no audio came through.\n'+
+        'Either "share audio" was left unticked, or this OS/browser cannot do it.\n'+
+        'Chrome on macOS cannot capture system audio at all — tab audio only.');
+    }else{
+      set('r6','ok','PASS — system/tab audio captured.\nTrack: '+a[0].label+
+        '\nThis is the path that actually hears remote meetings.');
+    }
+    s.getTracks().forEach(x=>x.stop());
+  }catch(e){ set('r6','bad','FAIL — '+e.name+': '+e.message); }
+}
+</script>
