@@ -9,7 +9,7 @@
      'wasm-unsafe-eval' is required by the on-device speech model. The connect-src
      list is exactly the three destinations documented in the header comment. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src blob: mediastream:; connect-src https://api.anthropic.com https://cdn.jsdelivr.net https://huggingface.co https://cdn-lfs.huggingface.co blob: data:; base-uri 'none'; form-action 'none'">
-<title>Recap — meeting assistant</title>
+<title>SpaceCadet — meeting assistant</title>
 <!--
   SPACECADET — meeting attention assistant. Single file, no build step, runs from file://.
 
@@ -656,7 +656,7 @@
 
   <!-- ------------------------------------------------------- status bar -->
   <div id="statusbar">
-    <span id="brand"><span id="brandMark"></span>Recap</span>
+    <span id="brand"><span id="brandMark"></span>SpaceCadet</span>
     <span id="recBadge" class="hidden" title="This meeting is being transcribed">
       <span class="recDot"></span>Recording</span>
     <span class="sbItem"><span class="dot" id="sbCapDot"></span><b id="sbCap">Idle</b></span>
@@ -917,7 +917,7 @@
   <div class="modal">
     <header><h2>Before you start</h2></header>
     <div class="body">
-      <p style="margin-top:0">Recap turns speech into text so it can tell you what is being discussed and
+      <p style="margin-top:0">SpaceCadet turns speech into text so it can tell you what is being discussed and
         when someone asks you something. Choose where that transcription happens. You can change it later
         in Settings.</p>
       <div class="choice" id="chooseLocal">
@@ -940,7 +940,7 @@
   <div class="modal">
     <header><h2>Confirm before recording</h2></header>
     <div class="body">
-      <p style="margin-top:0">Recap is about to transcribe everyone audible in this meeting, not just you.
+      <p style="margin-top:0">SpaceCadet is about to transcribe everyone audible in this meeting, not just you.
         Recording laws in several states require that every participant is told.</p>
       <ul style="margin:10px 0;padding-left:18px;line-height:1.7">
         <li>Say out loud that you are using a note-taking assistant.</li>
@@ -1123,8 +1123,8 @@
         afterwards. Required once before the Whisper engine can run. Corporate proxies often block it — if so the
         app falls back to Web Speech and says so.</div>
       <div class="row">
-        <label>Whisper chunk length — <b id="setChunkVal">24</b>s</label>
-        <input type="range" id="setChunk" min="10" max="30" step="2">
+        <label>Whisper chunk length — <b id="setChunkVal">15</b>s</label>
+        <input type="range" id="setChunk" min="10" max="30" step="1">
         <div class="hint">Whisper transcribes in blocks, so text arrives in bursts this far apart. Shorter = more
           responsive, more CPU.</div>
       </div>
@@ -1224,7 +1224,7 @@
         <input type="checkbox" id="setChime">
       </div>
       <div class="row">
-        <label>Alert auto-clears after — <b id="setAlertTtlVal">120</b>s</label>
+        <label>Alert auto-clears after — <b id="setAlertTtlVal">30</b>s</label>
         <input type="range" id="setAlertTtl" min="30" max="300" step="15">
       </div>
     </div>
@@ -1675,16 +1675,17 @@ var DEFAULTS = {
   source: 'mic',               // mic | system
   engine: 'webspeech',         // webspeech | whisper
   allowCdn: false,
-  chunkSec: 24,
+  chunkSec: 15,
   names: '',
   qPatterns: true,
   chime: false,
-  alertTtlSec: 120,
+  alertTtlSec: 30,
   windowMin: 10,
   topicTh: 0.35,
   profile: '',
   context: '',
-  discreet: true               // quiet by default; a loud banner beside a colleague is worse
+  discreet: true,              // quiet by default; a loud banner beside a colleague is worse
+  _tuningRev: 0                // bookkeeping for the one-time retune below, not a user setting
 };
 
 /* Consent is per-session, deliberately NOT persisted. Every new page load must
@@ -1722,6 +1723,21 @@ var CFG = load(SETTINGS_KEY, DEFAULTS);
    stored [null] cannot throw inside renderRoster() before the tick loop starts. */
 CFG.roster = sanitizeRoster(CFG.roster);
 for (var _k in SETTING_RANGE) if (typeof CFG[_k] === 'number') CFG[_k] = clampSetting(_k, CFG[_k]);
+
+/* ONE-TIME RETUNE.
+   Changing DEFAULTS only reaches a browser that has never run this before;
+   everyone else carries the old numbers in localStorage forever, so a tuning
+   change would silently never arrive for the people already using it.
+   This adopts a new default ONLY where the stored value is still the old
+   default — a number someone deliberately dragged a slider to is left alone.
+   Bump TUNING_REV when defaults change again; each revision applies once. */
+var TUNING_REV = 1;
+if (CFG._tuningRev < TUNING_REV) {
+  if (CFG.chunkSec === 24) CFG.chunkSec = 15;        // faster first text out of Whisper
+  if (CFG.alertTtlSec === 120) CFG.alertTtlSec = 30; // an alert two minutes stale is a lie
+  CFG._tuningRev = TUNING_REV;
+  saveCfg();
+}
 
 function load(key, defaults) {
   var out = {};
@@ -2900,7 +2916,7 @@ function WebSpeechEngine() {
           /* Fatal: no amount of restarting fixes a denied permission. */
           fatal = true; shouldBeRunning = false;
           sttStatus('permission denied', 'err');
-          toast('Microphone access was blocked. Click Allow when your browser asks. Opening Recap from a ' +
+          toast('Microphone access was blocked. Click Allow when your browser asks. Opening SpaceCadet from a ' +
                 'web address instead of a saved file lets the browser remember it.', 'err', 12000);
           /* Do not keep claiming to be live when the engine is dead. */
           setTimeout(function () { if (listening) stopListening(); }, 0);
@@ -3286,8 +3302,8 @@ async function startListening() {
       NotFoundError: 'No microphone was found. Plug one in, or pick a different input in your system sound settings.',
       NotReadableError: 'The microphone is busy — another app is probably using it. Close Teams or Zoom audio settings and try again.',
       AbortError: 'The audio device stopped responding. Try again, or reconnect it.',
-      OverconstrainedError: 'This microphone does not support the settings Recap asked for. Try a different input device.',
-      SecurityError: 'The browser blocked audio capture on this page. Opening Recap from a web address rather than a saved file usually fixes it.'
+      OverconstrainedError: 'This microphone does not support the settings SpaceCadet asked for. Try a different input device.',
+      SecurityError: 'The browser blocked audio capture on this page. Opening SpaceCadet from a web address rather than a saved file usually fixes it.'
     };
     if (e && byName[e.name]) msg = byName[e.name];
     toast(msg + (e && e.hint ? '  ' + e.hint : ''), 'err', 13000);
@@ -3423,7 +3439,7 @@ function outboundBlocked(purpose, url) {
   renderSoon();
 }
 
-/* The one and only fetch() in Recap. */
+/* The one and only fetch() in SpaceCadet. */
 async function outbound(url, init, purpose) {
   if (CFG.sensitive) {
     outboundBlocked(purpose + ' (sensitive meeting)', url);
@@ -4635,8 +4651,8 @@ function setSegment(name) {
 /* Settings portability, so twelve branches can run one configuration. */
 function exportSettings() {
   var out = {};
-  for (var k in CFG) if (k !== 'apiKey') out[k] = CFG[k];   // the key never travels
-  out._app = 'recap'; out._version = APP_VERSION;
+  for (var k in CFG) if (k !== 'apiKey' && k.charAt(0) !== '_') out[k] = CFG[k];  // the key never travels
+  out._app = 'spacecadet'; out._version = APP_VERSION;
   var blob, url;
   try {
     blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
@@ -4658,6 +4674,7 @@ function importSettings(text) {
   var LOCKED = { apiKey: 1, sensitive: 1, backend: 1, allowCdn: 1, retentionDays: 1, spendCapUsd: 1 };
   var n = 0, skipped = 0;
   for (var k in DEFAULTS) {
+    if (k.charAt(0) === '_') continue;               // internal bookkeeping, never importable
     if (LOCKED[k]) { if (obj[k] !== undefined) skipped++; continue; }
     var v = obj[k];
     if (v === undefined || v === null) continue;
@@ -4859,8 +4876,8 @@ function downloadBlob(text, mime, name) {
 
 function meetingFileBase() {
   var d = new Date(MEET.startedAt || now()), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
-  var slug = (CFG.meetingTitle || 'recap').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-             .replace(/^-|-$/g, '').slice(0, 40) || 'recap';
+  var slug = (CFG.meetingTitle || 'spacecadet').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+             .replace(/^-|-$/g, '').slice(0, 40) || 'spacecadet';
   return slug + '-' + d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) +
          '-' + p2(d.getHours()) + p2(d.getMinutes());
 }
@@ -4895,7 +4912,7 @@ function exportText() {
 function exportJson() {
   if (!exportGuard()) return;
   var out = {
-    app: 'recap', version: APP_VERSION,
+    app: 'spacecadet', version: APP_VERSION,
     meeting: { title: CFG.meetingTitle || '', type: CFG.meetingType || 'standard',
                participants: CFG.participants || '', startedAt: MEET.startedAt,
                endedAt: now(), durationMs: now() - (MEET.startedAt || now()) },
@@ -4955,7 +4972,7 @@ function exportMarkdown() {
   if (CFG.participants) { L.push(''); L.push('**Present:** ' + CFG.participants); }
   if (CFG.meetingType && CFG.meetingType !== 'standard') L.push('**Type:** ' + CFG.meetingType);
   L.push('');
-  L.push('_Captured with Recap v' + APP_VERSION + ' · ' + clockText(now() - started) + ' · ' +
+  L.push('_Captured with SpaceCadet v' + APP_VERSION + ' · ' + clockText(now() - started) + ' · ' +
          MEET.frags.length + ' transcript fragments · summarizer: ' + CFG.backend + '_');
   if (CFG.backend === 'api' && MEET.cost.calls) {
     L.push('_' + MEET.cost.calls + ' API calls · ' + MEET.cost.inTok + ' in / ' + MEET.cost.outTok +

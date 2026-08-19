@@ -1,13 +1,10 @@
-# Recap
+# SpaceCadet
 
 A meeting attention assistant in one self-contained HTML file. Open `spacecadet.html` from
 disk — no Node, no npm, no build step, no extensions, no server, no account.
 
 When you snap back from a lapse in focus, it tells you in about two seconds what is being
 discussed *right now*, and whether someone just asked you something.
-
-The repository and the file are called `spacecadet`; the app calls itself **Recap** on screen
-and in the window title, because that is the name that ends up on a shared screen.
 
 ## Quick start
 

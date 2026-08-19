@@ -1,8 +1,5 @@
-RECAP - meeting attention assistant
-===================================
-
-  The file is called spacecadet.html. The app calls itself Recap on screen,
-  which is the name that shows up if you ever share your screen.
+SPACECADET - meeting attention assistant
+========================================
 
 WHAT IT IS
   You lose focus in a meeting. You glance at this. Two seconds later you know
