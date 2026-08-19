@@ -1262,12 +1262,21 @@
       <div class="hint" style="line-height:1.9">
         <span class="kbd">L</span> start/stop listening &nbsp;
         <span class="kbd">C</span> catch me up &nbsp;
-        <span class="kbd">S</span> settings &nbsp;
-        <span class="kbd">D</span> dismiss alert &nbsp;
+        <span class="kbd">B</span> bookmark this moment &nbsp;
+        <span class="kbd">T</span> full transcript &nbsp;
+        <span class="kbd">R</span> meeting snapshot &nbsp;
         <span class="kbd">E</span> export &nbsp;
+        <span class="kbd">D</span> dismiss alert &nbsp;
         <span class="kbd">V</span> discreet &nbsp;
+        <span class="kbd">S</span> settings &nbsp;
         <span class="kbd">Esc</span> panic-hide / restore
       </div>
+      <div class="hint" style="margin-top:8px"><span class="kbd">1</span>–<span class="kbd">9</span> mark who is
+        speaking, in the order they appear in the bar at the top. This is the one you want under your fingers
+        during a Level 10 — it is faster than reaching for the mouse, and it is what gives to-dos an owner.</div>
+      <div class="hint" style="margin-top:8px">Keys are ignored while you are typing in a field, so a name with
+        a <b>c</b> in it will not fire catch-up. <span class="kbd">Esc</span> is the exception: it works from
+        anywhere, always.</div>
     </div>
 
     <div class="fset" id="privacyPanel">
@@ -4939,10 +4948,7 @@ function exportStretyBlock() {
 }
 
 function exportMarkdown() {
-  if (CFG.sensitive) {
-    toast('Export is off for a meeting marked sensitive. Change that in Settings if this is not one.', 'err', 9000);
-    return;
-  }
+  if (!exportGuard()) return;
   var started = MEET.startedAt || now();
   var L = [];
   L.push('# ' + (CFG.meetingTitle || 'Meeting notes') + ' \u2014 ' + new Date(started).toLocaleString());
@@ -5041,24 +5047,10 @@ function exportMarkdown() {
   }).join('\n\n') || '_empty_');
   L.push('');
 
-  var blob, url;
-  try {
-    blob = new Blob([L.join('\n')], { type: 'text/markdown;charset=utf-8' });
-    url = URL.createObjectURL(blob);
-  } catch (e) {
-    toast('This browser blocked the download. Your notes are safe — copy them from the catch-up view instead.',
-          'err', 9000);
-    return;
-  }
-  var d = new Date(started), p = function (n) { return (n < 10 ? '0' : '') + n; };
-  var name = 'spacecadet-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
-             '-' + p(d.getHours()) + p(d.getMinutes()) + '.md';
-
-  var a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
-  toast('Exported ' + name, 'ok');
+  /* Named from the meeting title like every other export, so a folder of these
+     sorts by meeting rather than by the app that produced them. */
+  var name = meetingFileBase() + '.md';
+  if (downloadBlob(L.join('\n'), 'text/markdown;charset=utf-8', name)) toast('Exported ' + name, 'ok');
 }
 
 /* ===================================================================== 20. while you were away */

@@ -1,43 +1,99 @@
-SPACECADET - meeting attention assistant
-========================================
+RECAP - meeting attention assistant
+===================================
+
+  The file is called spacecadet.html. The app calls itself Recap on screen,
+  which is the name that shows up if you ever share your screen.
 
 WHAT IT IS
   You lose focus in a meeting. You glance at this. Two seconds later you know
-  what is being discussed, and whether someone just asked you something.
+  what is being discussed, and whether someone just asked you something - what
+  they meant by it, and what kind of answer they are waiting for.
 
 HOW TO OPEN IT
   1. Save spacecadet.html somewhere you will keep it (Desktop or Documents).
   2. Double-click it. It opens in Chrome or Edge.
-  3. Press S. Enter your name in "My name variants" - including whatever
+  3. It asks once where transcription should happen. Read that screen; the
+     short version is under WHERE YOUR AUDIO GOES below.
+  4. Press S. Enter your name in "My name variants" - including whatever
      mangled spellings speech-to-text produces for it. The name alert cannot
      fire without this.
-  4. Press L, then click Allow on the microphone prompt.
+  5. In the same panel, add who is in the room.
+  6. Press L, tick the box confirming you have told the room, and click Allow
+     on the microphone prompt.
 
   There is nothing to install. No account, no API key, no sign-up.
 
 KEYS
-  L   start / stop listening
-  C   catch me up (copies a prompt, opens claude.ai)
-  S   settings
-  D   dismiss the alert
-  E   export the meeting as a Markdown file
-  V   discreet mode (compact and low-key)
-  Esc panic-hide the screen. Press it again to bring it back.
+  L    start / stop listening
+  C    catch me up (copies a prompt, opens claude.ai)
+  B    bookmark this moment
+  T    read the full transcript
+  R    meeting snapshot
+  E    export the meeting as a Markdown file
+  D    dismiss the alert
+  V    discreet mode (compact and low-key)
+  S    settings
+  1-9  mark who is speaking, in the order they appear in the bar at the top
+  Esc  blank the screen instantly. Press it again to bring it back.
+
+  Esc works from anywhere, always, including while you are typing. Whether it
+  also stops the microphone is a setting, off by default.
+
+  The number keys are the ones worth learning. Tapping a name as each person
+  starts talking is what gives a to-do a real owner in the export.
+
+DURING A LEVEL 10
+  Tap the segment you are in - Check-in, Scorecard, Rocks, Headlines, To-dos,
+  IDS, Conclude - and everything captured from then on is stamped with it, so
+  the export reads as an agenda log rather than a word cloud. IDS runs a clock
+  on the issue being discussed.
+
+  "Copy for Strety" in the export menu gives you a block that pastes straight
+  into the matching To-dos, Issues and Headlines lists.
+
+  To-dos you never tick carry forward into your next meeting automatically.
 
 WHERE YOUR AUDIO GOES
   There is no server. This is one static file; nothing is uploaded, logged, or
   stored anywhere except your own browser.
 
-  By default, speech recognition uses the browser's built-in Web Speech engine,
-  which sends audio to Google to be transcribed. That is Chrome's engine, not
-  this app's choice.
+  On first run it asks you to choose:
 
-  If you want nothing to leave the machine: Settings -> speech-to-text engine ->
-  Local Whisper, and set the summarizer to "local". The app then blocks its own
-  outbound calls and logs every blocked attempt so you can verify it.
+    On this device      Audio never leaves your laptop. Needs a one-time
+                        ~40 MB download, which some office networks block.
+                        Text quality is lower - good enough to follow along.
+
+    Google speech       Your meeting audio is sent to Google to be
+                        transcribed, the same service phone dictation uses.
+                        Nothing to install, noticeably more accurate.
+
+  If you want nothing at all to leave the machine: choose on-device, and set
+  the summarizer switch to "local". The app then blocks its own outbound calls
+  and logs every blocked attempt so you can verify it.
+
+  For a personnel matter, an investigation, a board executive session, or
+  anything involving a minor: turn on "Sensitive meeting" in Settings. That
+  hard-disables export, the claude.ai handoff and every API call at once. Or
+  better, do not run it at all in those meetings.
+
+  It asks you to confirm you have told the room before it records, every
+  session, and shows a recording indicator that discreet mode cannot hide.
+
+  Stored meetings are purged automatically after a number of days you set.
 
   The whole thing is one readable file. Open it in Notepad, or read it on
   GitHub, before you trust it with a microphone.
+
+WHO SAID WHAT
+  Click a name in the bar at the top, or press its number, as each person
+  speaks. What follows is attributed to them until you change it.
+
+  You can also record about eight seconds of each person's voice once, and it
+  will try to recognise them in later meetings. What it stores is a short list
+  of numbers describing pitch and tone - never recorded audio - and none of it
+  is ever sent anywhere. Guesses are marked with a "?" and never overwrite a
+  name you picked yourself. It handles a handful of clearly different voices
+  in decent audio and gets confused by similar voices and speakerphones.
 
 TWO THINGS THAT MIGHT GO WRONG
   1. Chrome asks for the microphone every single time you open it. That is
@@ -46,10 +102,10 @@ TWO THINGS THAT MIGHT GO WRONG
      over https fixes it permanently.
 
   2. "Speech service unreachable" means your network blocks Google's speech
-     service, which many corporate proxies do. Switch the engine to Local
-     Whisper in Settings. That needs a one-off ~40 MB model download, which
-     some networks also block. If both are blocked, transcription cannot run
-     on that network at all.
+     service, which many corporate proxies do. Switch the engine to on-device
+     in Settings. That needs a one-off ~40 MB model download, which some
+     networks also block. If both are blocked, transcription cannot run on
+     that network at all.
 
 REMOTE MEETING AUDIO (Windows only)
   To hear people on the far end of a Teams or Zoom call rather than just your
@@ -57,11 +113,13 @@ REMOTE MEETING AUDIO (Windows only)
   SCREEN, and tick "Also share system audio" in the picker. A window share
   carries no audio track. Chrome on macOS cannot do this at all.
 
+  Note that a shared system-audio stream is one mixed channel, so automatic
+  voice recognition does not work with it. Microphone only.
+
 REQUIREMENTS
   Chrome or Edge. Built and tuned for Windows.
 
 SOURCE
   https://github.com/lrgerke-max/spacecadet
 
-  An unofficial fan-styled personal tool. Not affiliated with or endorsed by
-  Lucasfilm or Disney.
+  A personal tool, shared as-is. Not affiliated with or endorsed by Strety.
