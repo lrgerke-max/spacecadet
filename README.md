@@ -62,6 +62,35 @@ at a glance — and visible in the app's own Network log panel.
   model download, which corporate proxies often block; the app falls back to Web Speech and
   says so. Transcript quality is mediocre by design — Claude compensates.
 
+## Look
+
+Styled after the inside of an X-wing, from reference photography of the cockpit.
+
+The organising idea: **grey hull for chrome only, dark screens for content**. The status
+strip, switch panel, side rails and bezels are weathered mid-grey plate with white scribed
+line-work and salmon-orange outline boxes; everything that carries text is a dark screen
+recessed into it. That is how the real cockpit is built, and it keeps every reading surface
+high-contrast — which is the whole point of the app.
+
+- **NOW** is the targeting computer: amber CRT, scanlines, reticle corners, one slow sweep.
+- **ALERT** is the master caution: hazard striping and a red-lit face.
+- Side rails carry illuminated key grids, louvred vents and knurled knobs. They are ornament
+  and deliberately carry **no data** — a readout that means nothing is worse than none.
+- Peak-emphasis moments use the signature crawl yellow.
+- Labels stay in plain words. The theme decorates the chrome, never the content.
+
+Two deliberate exemptions: **discreet mode** drops the rails, glow and colour, and the
+**panic screen** is not themed at all — it is a plain white document, because it is the one
+screen someone else might see.
+
+Type is Bahnschrift, which ships with Windows 10+ and is the condensed technical face the
+design is drawn for. On other platforms it falls back through DIN Alternate and Roboto
+Condensed to the system sans, which reads wider and less instrument-like.
+
+Motion is transform/opacity only and honours `prefers-reduced-motion`. Nothing animates a
+box-shadow or filter on a surface that repaints, because this runs for hours on a locked-down
+laptop.
+
 ## Keys
 
 `L` listen · `C` catch me up · `S` settings · `D` dismiss alert · `E` export · `V` discreet ·
