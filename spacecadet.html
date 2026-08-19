@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Requested by the IT review: bound what this page is permitted to reach, so the
+     network boundary is enforced by the browser rather than only by our own code.
+     'unsafe-inline' is unavoidable for a single-file app with no build step;
+     'wasm-unsafe-eval' is required by the on-device speech model. The connect-src
+     list is exactly the three destinations documented in the header comment. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src blob: mediastream:; connect-src https://api.anthropic.com https://cdn.jsdelivr.net https://huggingface.co https://cdn-lfs.huggingface.co blob: data:; base-uri 'none'; form-action 'none'">
 <title>Recap — meeting assistant</title>
 <!--
   SPACECADET — meeting attention assistant. Single file, no build step, runs from file://.
@@ -456,6 +462,17 @@
     flex:0 0 auto;cursor:pointer}
   li.itemDone{opacity:.5;text-decoration:line-through;text-decoration-color:var(--txt-3)}
   li.itemDone .carryTag,li.itemDone .autoTag,li.itemDone .segTag{text-decoration:none}
+  #exportWrap{position:relative;display:inline-block}
+  #exportMenu{
+    position:absolute;top:calc(100% + 4px);left:0;z-index:120;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-lg);
+    min-width:190px;padding:4px;display:flex;flex-direction:column;
+  }
+  #exportMenu button{
+    text-align:left;background:transparent;border:0;padding:7px 10px;font-size:12.5px;
+    border-radius:var(--radius-sm);color:var(--txt);
+  }
+  #exportMenu button:hover{background:var(--hover)}
   .qRow{display:flex;flex-direction:column;gap:2px}
   .qWho{font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--txt-3)}
   .qWho.me{color:#b91c1c}
@@ -651,7 +668,15 @@
     <span id="sbSpacer2" style="flex:1 1 auto"></span>
     <button class="btn sm" id="btnDiscreet" title="Compact, low-key layout">◐ Discreet</button>
     <button class="btn sm" id="btnBookmark" title="Mark this moment">&#128278; Bookmark <span class="k">B</span></button>
-    <button class="btn sm" id="btnExport" title="Download the meeting as Markdown">⭳ Export <span class="k">E</span></button>
+    <span id="exportWrap">
+      <button class="btn sm" id="btnExport" title="Download the meeting">⭳ Export <span class="k">E</span></button>
+      <div id="exportMenu" class="hidden">
+        <button data-x="md">Markdown (.md)</button>
+        <button data-x="txt">Plain text (.txt)</button>
+        <button data-x="json">Structured data (.json)</button>
+        <button data-x="strety">Copy for Strety</button>
+      </div>
+    </span>
     <button class="btn sm" id="btnNew" title="Clear the meeting and start fresh">✧ New meeting</button>
     <button class="btn sm" id="btnSettings">⚙ Settings <span class="k">S</span></button>
   </div>
@@ -925,6 +950,27 @@
   </div>
 </div>
 
+<div class="scrim hidden" id="audioHelpScrim">
+  <div class="modal" style="max-width:480px">
+    <header><h2>Capturing the other people on the call</h2>
+      <button class="x" aria-label="Close" data-close="audioHelpScrim">&times;</button></header>
+    <div class="body">
+      <p style="margin-top:0">Your microphone only hears the room. To transcribe people on the far end of a
+        Teams or Zoom call, the browser has to share the computer's own sound.</p>
+      <ol style="padding-left:18px;line-height:1.9">
+        <li>Press <b>Start listening</b>.</li>
+        <li>In the picker, choose the <b>Entire Screen</b> tab — not Window, not Chrome Tab.
+          A window share carries no audio at all.</li>
+        <li>Tick <b>Also share system audio</b> at the bottom left. This is the step everyone misses.</li>
+        <li>Click <b>Share</b>.</li>
+      </ol>
+      <div class="warn">Windows only. Chrome on macOS cannot capture system audio at all — there it is the
+        microphone, or a single Chrome tab's audio, and nothing else.</div>
+    </div>
+    <footer><button class="btn primary" data-close="audioHelpScrim">Got it</button></footer>
+  </div>
+</div>
+
 <div class="scrim hidden" id="confirmScrim">
   <div class="modal" style="max-width:440px">
     <header><h2 id="confirmTitle">Are you sure?</h2></header>
@@ -999,6 +1045,7 @@
           <option value="system">System / tab audio — hears remote participants directly</option>
         </select>
         <div class="hint" id="sourceHint"></div>
+        <button class="btn sm" id="btnAudioHelp" style="margin-top:6px">Show me the exact steps</button>
       </div>
       <div class="row">
         <label for="setEngine">Speech-to-text engine</label>
@@ -1042,6 +1089,31 @@
       <div class="hint">Needs a short voice sample per person, recorded while listening is running. Guessed
         names are shown with a <b>?</b> and never overwrite a name you picked yourself. Microphone source
         only — a shared system-audio stream is one mixed channel, so it cannot be separated this way.</div>
+    </div>
+
+    <div class="fset">
+      <h3>This meeting</h3>
+      <div class="row">
+        <label for="setMeetingTitle">Title</label>
+        <input type="text" id="setMeetingTitle" placeholder="e.g. Leadership Team L10">
+      </div>
+      <div class="row">
+        <label for="setMeetingType">Type</label>
+        <select id="setMeetingType">
+          <option value="standard">Standard meeting</option>
+          <option value="leadership">Leadership / Level 10</option>
+          <option value="oneonone">1:1</option>
+          <option value="personnel">Personnel matter or investigation</option>
+          <option value="board">Board / executive session</option>
+        </select>
+        <div class="hint" id="meetingTypeHint"></div>
+      </div>
+      <div class="row">
+        <label for="setParticipants">Who is here</label>
+        <input type="text" id="setParticipants" placeholder="Sarah, Mike, Brooke">
+        <div class="hint">Adds them to the roster so you can attribute speech, and helps resolve
+          references like “ask Brooke about that”.</div>
+      </div>
     </div>
 
     <div class="fset">
@@ -1504,6 +1576,9 @@ var DEFAULTS = {
   firstRunDone: false,         // has the user made the transcription choice yet
   panicStopsCapture: false,    // Esc hides instantly either way; this decides whether it also cuts the mic
   segment: '',                 // current Level 10 agenda segment
+  meetingTitle: '',
+  meetingType: 'standard',     // standard | leadership | personnel | board | oneonone
+  participants: '',
   roster: [],                  // [{id,name,print,enrolled}] — who is in the room
   autoSpeaker: false,          // attempt voice matching as well as manual tagging
   model: 'claude-sonnet-5',
@@ -2329,7 +2404,11 @@ function addDecisions(arr, auto) {
     var k = normKey(text);
     if (!k || keyIndex.dec[k]) return;
     keyIndex.dec[k] = 1;
-    MEET.decisions.push({ text: text, t: now(), segment: seg(), auto: !!auto }); added++;
+    /* EOS: a decision usually spawns a to-do. Linking them means the export
+       shows what a decision actually produced rather than two loose lists. */
+    var spawned = MEET.actions.filter(function (a) { return Math.abs(a.t - now()) < 90000; })
+                              .slice(-1).map(function (a) { return a.text; })[0] || '';
+    MEET.decisions.push({ text: text, t: now(), segment: seg(), auto: !!auto, linkedTo: spawned }); added++;
   });
   if (added) { capList(MEET.decisions); saveMeeting(); }
   return added;
@@ -3120,6 +3199,13 @@ async function startListening() {
   /* Feature tap for voice matching. Analyser only — it is never routed to the
      speakers and never leaves this function. */
   if (CFG.source === 'mic') VoiceID.attach(captureStream);
+
+  /* Sharing your screen means colleagues can see this. Going quiet should not
+     depend on remembering to press V at the exact moment it matters. */
+  if (CFG.source === 'system' && !CFG.discreet) {
+    setDiscreet(true);
+    toast('Screen sharing detected — switched to discreet layout so this is less conspicuous.', '', 7000);
+  }
 
   /* Final gate: a stop or panic during engine startup wins. */
   if (myGen !== startGen) {
@@ -4446,6 +4532,114 @@ function removeBookmark(i) {
 
 /* ===================================================================== 19. export */
 
+/* One guarded download path for every format, so a browser that blocks Blob
+   downloads fails the same visible way everywhere. */
+function downloadBlob(text, mime, name) {
+  var blob, url;
+  try {
+    blob = new Blob([text], { type: mime });
+    url = URL.createObjectURL(blob);
+  } catch (e) {
+    toast('This browser blocked the download. Copy the text from the catch-up view instead.', 'err', 9000);
+    return false;
+  }
+  var a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+  return true;
+}
+
+function meetingFileBase() {
+  var d = new Date(MEET.startedAt || now()), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  var slug = (CFG.meetingTitle || 'recap').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+             .replace(/^-|-$/g, '').slice(0, 40) || 'recap';
+  return slug + '-' + d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) +
+         '-' + p2(d.getHours()) + p2(d.getMinutes());
+}
+
+function exportGuard() {
+  if (CFG.sensitive) {
+    toast('Export is off for a meeting marked sensitive. Change that in Settings if this is not one.', 'err', 9000);
+    return false;
+  }
+  return true;
+}
+
+/* Plain text — the format that opens anywhere, including in an email body. */
+function exportText() {
+  if (!exportGuard()) return;
+  var L = [];
+  L.push((CFG.meetingTitle || 'Meeting') + ' \u2014 ' + new Date(MEET.startedAt || now()).toLocaleString());
+  if (CFG.participants) L.push('Present: ' + CFG.participants);
+  L.push('============================================================');
+  L.push('');
+  MEET.frags.forEach(function (f) {
+    var who = f.spk ? (speakerName(f.spk) + (f.guess ? '?' : '')) : 'Unknown Speaker';
+    L.push(hhmm(f.t) + ' \u2014 ' + who);
+    L.push(f.text);
+    L.push('');
+  });
+  downloadBlob(L.join('\n'), 'text/plain;charset=utf-8', meetingFileBase() + '.txt');
+  toast('Exported plain text.', 'ok');
+}
+
+/* JSON — the whole record, for anything that wants to process it. */
+function exportJson() {
+  if (!exportGuard()) return;
+  var out = {
+    app: 'recap', version: APP_VERSION,
+    meeting: { title: CFG.meetingTitle || '', type: CFG.meetingType || 'standard',
+               participants: CFG.participants || '', startedAt: MEET.startedAt,
+               endedAt: now(), durationMs: now() - (MEET.startedAt || now()) },
+    speakers: CFG.roster.map(function (r) {
+      return { id: r.id, name: r.name, voiceEnrolled: !!r.enrolled, samples: r.samples || 0 };
+    }),
+    state: MEET.convo,
+    topics: MEET.timeline, decisions: MEET.decisions, issues: MEET.issues,
+    todos: MEET.actions, glossary: MEET.glossary,
+    questions: MEET.questionLog, bookmarks: MEET.bookmarks,
+    transcript: MEET.frags.map(function (f) {
+      return { t: f.t, time: hhmm(f.t), speaker: f.spk ? speakerName(f.spk) : '',
+               speakerGuessed: !!f.guess, text: f.text };
+    })
+  };
+  downloadBlob(JSON.stringify(out, null, 2), 'application/json', meetingFileBase() + '.json');
+  toast('Exported JSON.', 'ok');
+}
+
+/* A block shaped to paste straight into Strety's lists, rather than making
+   someone retype the meeting into it. */
+function exportStretyBlock() {
+  if (!exportGuard()) return;
+  var L = [];
+  L.push('TO-DOS');
+  var open = MEET.actions.filter(function (a) { return !a.done; });
+  L.push(open.length ? open.map(function (a) {
+    return (a.owner || 'Unassigned') + ' \u2014 ' + a.text + (a.due ? ' (due ' + a.due + ')' : '');
+  }).join('\n') : '(none)');
+  L.push('');
+  L.push('ISSUES');
+  var iss = MEET.issues.filter(function (i) { return !i.done; });
+  L.push(iss.length ? iss.map(function (i) { return i.text; }).join('\n') : '(none)');
+  L.push('');
+  L.push('HEADLINES');
+  L.push(MEET.decisions.length ? MEET.decisions.map(function (d) {
+    return d.text + (d.linkedTo ? '  [led to: ' + d.linkedTo + ']' : '');
+  }).join('\n') : '(none)');
+  var text = L.join('\n');
+  copyToClipboard(text).then(function (okd) {
+    show('handoffScrim');
+    $('handoffTitle').textContent = 'Paste into Strety';
+    $('handoffText').value = text;
+    $('handoffStatus').className = okd ? 'warn ok' : 'warn red';
+    $('handoffStatus').innerHTML = okd
+      ? '<b>Copied.</b> Paste into the matching lists in Strety.'
+      : '<b>Clipboard refused</b> \u2014 the text below is selected, press Ctrl+C.';
+    if (!okd) { $('handoffText').focus(); $('handoffText').select(); }
+  });
+}
+
 function exportMarkdown() {
   if (CFG.sensitive) {
     toast('Export is off for a meeting marked sensitive. Change that in Settings if this is not one.', 'err', 9000);
@@ -4453,7 +4647,9 @@ function exportMarkdown() {
   }
   var started = MEET.startedAt || now();
   var L = [];
-  L.push('# Meeting notes — ' + new Date(started).toLocaleString());
+  L.push('# ' + (CFG.meetingTitle || 'Meeting notes') + ' \u2014 ' + new Date(started).toLocaleString());
+  if (CFG.participants) { L.push(''); L.push('**Present:** ' + CFG.participants); }
+  if (CFG.meetingType && CFG.meetingType !== 'standard') L.push('**Type:** ' + CFG.meetingType);
   L.push('');
   L.push('_Captured with Recap v' + APP_VERSION + ' · ' + clockText(now() - started) + ' · ' +
          MEET.frags.length + ' transcript fragments · summarizer: ' + CFG.backend + '_');
@@ -4667,6 +4863,11 @@ function syncSettingsUI() {
   $('setSource').value = CFG.source;
   $('setEngine').value = CFG.engine;
   $('setAllowCdn').checked = !!CFG.allowCdn;
+  $('setMeetingTitle').value = CFG.meetingTitle || '';
+  $('setMeetingType').value = CFG.meetingType || 'standard';
+  $('setParticipants').value = CFG.participants || '';
+  /* A forced type must not be silently overridable from the checkbox. */
+  $('setSensitive').disabled = !!LOCKED_TYPES[CFG.meetingType];
   $('setSensitive').checked = !!CFG.sensitive;
   $('setAutoSpeaker').checked = !!CFG.autoSpeaker;
   $('setRetention').value = CFG.retentionDays; $('setRetentionVal').textContent = CFG.retentionDays;
@@ -4758,6 +4959,7 @@ function bindSettings() {
     CFG.engine = this.value; saveCfg(); syncSettingsUI();
     if (listening) toast('Restart listening for the new engine to take effect.', 'warn');
   });
+  on('btnAudioHelp', 'click', function () { show('audioHelpScrim'); });
   on('setAllowCdn', 'change', function () { CFG.allowCdn = this.checked; saveCfg(); });
   on('setAutoSpeaker', 'change', function () {
     CFG.autoSpeaker = this.checked; saveCfg();
@@ -4765,6 +4967,12 @@ function bindSettings() {
       toast('Nobody has a voice sample yet — use "Learn voice" beside each name while listening.', 'warn', 9000);
     }
   });
+  on('setMeetingTitle', 'input', function () { CFG.meetingTitle = this.value.slice(0, 120); saveCfg(); });
+  on('setMeetingType', 'change', function () {
+    CFG.meetingType = this.value; saveCfg(); applyMeetingType(); syncSettingsUI();
+  });
+  on('setParticipants', 'input', function () { CFG.participants = this.value.slice(0, 300); saveCfg(); });
+  on('setParticipants', 'change', function () { syncParticipantsToRoster(); syncSettingsUI(); });
   on('setSensitive', 'change', function () {
     CFG.sensitive = this.checked; saveCfg(); syncSettingsUI(); renderSoon();
     if (this.checked) toast('Sensitive meeting on. Export and every outbound path are now blocked.', 'ok', 7000);
@@ -4801,6 +5009,35 @@ function bindSettings() {
   on('settingsClose', 'click', closeSettings);
 }
 
+/* Some meeting types are never appropriate for cloud transcription or an AI
+   handoff. Rather than rely on someone remembering to tick a box, choosing one
+   of those types switches sensitive mode on itself. */
+var LOCKED_TYPES = { personnel: 1, board: 1 };
+function applyMeetingType() {
+  var t = CFG.meetingType || 'standard';
+  var hint = $('meetingTypeHint');
+  if (LOCKED_TYPES[t]) {
+    if (!CFG.sensitive) {
+      CFG.sensitive = true; saveCfg();
+      toast('This meeting type switched on Sensitive meeting — export and every outbound path are off.',
+            'ok', 9000);
+    }
+    if (hint) hint.innerHTML = '<b>Sensitive mode is forced on for this type.</b> Export, the claude.ai ' +
+      'handoff and all API calls stay disabled while it is selected.';
+  } else if (hint) {
+    hint.textContent = 'Personnel matters and board executive sessions force sensitive mode on.';
+  }
+  renderSoon();
+}
+
+/* Participants typed once become roster entries you can attribute speech to. */
+function syncParticipantsToRoster() {
+  String(CFG.participants || '').split(/[,;]/).forEach(function (n) {
+    n = n.trim();
+    if (n.length >= 2) rosterAdd(n);
+  });
+}
+
 function setBackend(b) {
   CFG.backend = b;
   saveCfg();
@@ -4829,7 +5066,21 @@ function bindUI() {
     document.body.classList.toggle('settingsOpen'); syncSettingsInert();
   });
   $('btnBookmark').addEventListener('click', addBookmark);
-  $('btnExport').addEventListener('click', exportMarkdown);
+  $('btnExport').addEventListener('click', function (e) {
+    e.stopPropagation();
+    $('exportMenu').classList.toggle('hidden');
+  });
+  $('exportMenu').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-x]') : null;
+    if (!b) return;
+    $('exportMenu').classList.add('hidden');
+    var k = b.getAttribute('data-x');
+    if (k === 'md') exportMarkdown();
+    else if (k === 'txt') exportText();
+    else if (k === 'json') exportJson();
+    else if (k === 'strety') exportStretyBlock();
+  });
+  document.addEventListener('click', function () { $('exportMenu').classList.add('hidden'); });
   $('btnDiscreet').addEventListener('click', function () { setDiscreet(!CFG.discreet); });
   $('btnNew').addEventListener('click', function () {
     uiConfirm('Start a new meeting?',
