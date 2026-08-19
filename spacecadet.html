@@ -462,6 +462,28 @@
     flex:0 0 auto;cursor:pointer}
   li.itemDone{opacity:.5;text-decoration:line-through;text-decoration-color:var(--txt-3)}
   li.itemDone .carryTag,li.itemDone .autoTag,li.itemDone .segTag{text-decoration:none}
+  .tsTurn{margin-bottom:12px}
+  .tsWho{font-size:11.5px;font-weight:700;margin-bottom:2px}
+  .tsLine{font-size:14px;line-height:1.55;color:var(--txt);overflow-wrap:anywhere;margin-bottom:2px}
+  .tsBm{font-size:12px;color:var(--org-btn);background:#fff7ed;border:1px solid #fed7aa;
+    border-radius:var(--radius-sm);padding:4px 8px;margin:4px 0}
+  #tsBody mark{background:#fef08a;color:inherit;border-radius:2px}
+  .privRow{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line-2);font-size:12px}
+  .privRow:last-child{border-bottom:0}
+  .privRow .pk{flex:0 0 40%;color:var(--txt-2);font-weight:500}
+  .privRow .pv{flex:1 1 auto}
+  .privRow .pv.ok{color:#047857}
+  .privRow .pv.warn{color:#b45309}
+  .topicList{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+  .topicList li{font-size:13px;color:var(--txt-2)}
+  .topicList li.cur{color:var(--txt);font-weight:600}
+  .curTag{font-size:9px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe;
+    border-radius:3px;padding:0 4px;margin-left:6px}
+  .rosterName{flex:1 1 auto;font-weight:500;font-size:13px;background:transparent;border:1px solid transparent;
+    border-radius:4px;padding:3px 5px;min-width:0}
+  .rosterName:hover{border-color:var(--line);background:var(--bg)}
+  .rosterName:focus{outline:none;border-color:var(--org);background:var(--card)}
+  .rosterRow .st.ok{color:#047857} .rosterRow .st.mid{color:#a16207} .rosterRow .st.low{color:#b91c1c}
   #exportWrap{position:relative;display:inline-block}
   #exportMenu{
     position:absolute;top:calc(100% + 4px);left:0;z-index:120;background:var(--card);
@@ -668,6 +690,8 @@
     <span id="sbSpacer2" style="flex:1 1 auto"></span>
     <button class="btn sm" id="btnDiscreet" title="Compact, low-key layout">◐ Discreet</button>
     <button class="btn sm" id="btnBookmark" title="Mark this moment">&#128278; Bookmark <span class="k">B</span></button>
+    <button class="btn sm" id="btnReview" title="Meeting snapshot">&#9673; Review <span class="k">R</span></button>
+    <button class="btn sm" id="btnTranscript" title="Read the whole meeting">&#9776; Transcript <span class="k">T</span></button>
     <span id="exportWrap">
       <button class="btn sm" id="btnExport" title="Download the meeting">⭳ Export <span class="k">E</span></button>
       <div id="exportMenu" class="hidden">
@@ -792,6 +816,11 @@
     </div>
 
     <div class="col">
+
+      <details class="panel" id="pTopics" open>
+        <summary>Recent topics <span class="count zero" id="cTopics">0</span></summary>
+        <div class="body"><ol id="lTopics" class="topicList"><li class="none">Nothing yet.</li></ol></div>
+      </details>
 
       <details class="panel" id="pQuestions">
         <summary>Recent questions <span class="count zero" id="cQuestions">0</span></summary>
@@ -950,6 +979,37 @@
   </div>
 </div>
 
+<div class="scrim hidden" id="reviewScrim">
+  <div class="modal" style="width:min(700px,100%)">
+    <header><h2>Meeting snapshot</h2>
+      <button class="x" aria-label="Close" data-close="reviewScrim">&times;</button></header>
+    <div class="body md" id="reviewBody"></div>
+    <footer>
+      <button class="btn primary" id="reviewTranscript">Read full transcript</button>
+      <button class="btn" data-x3="md">Export .md</button>
+      <button class="btn" data-x3="strety">Copy for Strety</button>
+      <button class="btn" data-close="reviewScrim">Close</button>
+    </footer>
+  </div>
+</div>
+
+<div class="scrim hidden" id="transcriptScrim">
+  <div class="modal" style="width:min(760px,100%)">
+    <header><h2>Full transcript</h2>
+      <span id="tsMeta" class="hint" style="margin-left:8px"></span>
+      <button class="x" aria-label="Close" data-close="transcriptScrim">&times;</button></header>
+    <div class="body" id="tsBody"></div>
+    <footer>
+      <input type="text" id="tsFind" placeholder="Find in transcript…" style="flex:1 1 160px;
+        padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:13px">
+      <button class="btn sm" data-x2="txt">.txt</button>
+      <button class="btn sm" data-x2="md">.md</button>
+      <button class="btn sm" data-x2="json">.json</button>
+      <button class="btn" data-close="transcriptScrim">Close</button>
+    </footer>
+  </div>
+</div>
+
 <div class="scrim hidden" id="audioHelpScrim">
   <div class="modal" style="max-width:480px">
     <header><h2>Capturing the other people on the call</h2>
@@ -1082,6 +1142,12 @@
           What follows is attributed to them, which is what gives to-dos a real owner.</div>
       </div>
       <div id="rosterList"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" id="btnClearVoices">Forget all voices</button>
+        <div class="hint">Speaker profiles live only in this browser. Nothing about a voice is ever sent
+          anywhere — the stored representation is a short list of numbers describing pitch and tone, not
+          recorded audio.</div>
+      </div>
       <div class="row inline" style="margin-top:10px">
         <label for="setAutoSpeaker">Also try to recognise voices automatically</label>
         <input type="checkbox" id="setAutoSpeaker">
@@ -1107,6 +1173,13 @@
           <option value="board">Board / executive session</option>
         </select>
         <div class="hint" id="meetingTypeHint"></div>
+      </div>
+      <div class="row">
+        <label for="icsFile">Load a calendar invite (optional)</label>
+        <input type="file" id="icsFile" accept=".ics,text/calendar">
+        <div class="hint">Reads a saved <code>.ics</code> invite <b>on this machine</b> to fill in the title
+          and attendees. Nothing is uploaded and no calendar account is connected — that would need a server
+          this app deliberately does not have.</div>
       </div>
       <div class="row">
         <label for="setParticipants">Who is here</label>
@@ -1195,6 +1268,13 @@
         <span class="kbd">V</span> discreet &nbsp;
         <span class="kbd">Esc</span> panic-hide / restore
       </div>
+    </div>
+
+    <div class="fset" id="privacyPanel">
+      <h3>Where your data goes</h3>
+      <div id="privacyRows"></div>
+      <div class="hint" style="margin-top:8px">This reflects your current settings, not a general claim.
+        Change the summarizer or engine above and it updates.</div>
     </div>
 
     <div class="fset">
@@ -1744,6 +1824,7 @@ function restoreMeeting() {
     MEET.questionLog = arrOf(p.questionLog, function (q) { return q && typeof q.text === 'string'; }).slice(-30);
     MEET.bookmarks = arrOf(p.bookmarks, function (x) { return x && typeof x === 'object' && isFinite(x.t); }).slice(-100);
     reindexItems();
+    rebuildMeetingCounts();      // one pass on restore, then incremental again
     return true;
   } catch (e) { return false; }
 }
@@ -1811,6 +1892,7 @@ function resetMeeting() {
                  question: null, confidence: '', at: 0 };
   MEET.questionLog = []; MEET.bookmarks = [];
   reindexItems();
+  meetingCounts = { uni: Object.create(null), total: 0 };
   if (carried.length || openIssues.length) {
     toast(carried.length + ' open to-do' + (carried.length === 1 ? '' : 's') + ' and ' + openIssues.length +
           ' unresolved issue' + (openIssues.length === 1 ? '' : 's') + ' carried into the new meeting.', 'ok', 8000);
@@ -1850,6 +1932,7 @@ function addFragment(text, t, spk) {
   if (!text) return;
   if (!MEET.startedAt) { MEET.startedAt = t; }
   MEET.frags.push({ t: t, text: text, spk: spk || currentSpeaker || '', guess: !!fragGuess });
+  countInto(meetingCounts, text);        // O(this fragment), never O(meeting)
   fragGuess = false;
   saveMeeting();
 }
@@ -1881,7 +1964,12 @@ function fragsSince(t) {
   return out.reverse();
 }
 function fragsBetween(a, b) {
-  return MEET.frags.filter(function (f) { return f.t >= a && f.t < b; });
+  var out = [], f = MEET.frags;
+  for (var i = f.length - 1; i >= 0; i--) {
+    if (f[i].t < a) break;            // ordered, so nothing earlier can qualify
+    if (f[i].t < b) out.push(f[i]);
+  }
+  return out.reverse();
 }
 function joinFrags(list) { return list.map(function (f) { return f.text; }).join(' '); }
 
@@ -1926,16 +2014,29 @@ function countTerms(list) {
   return { uni: uni, big: big, surface: surface, total: total };
 }
 
-var meetingCounts = { uni: Object.create(null), total: 0, at: 0 };
-function refreshMeetingCounts() {
-  /* Recomputed lazily — the whole-meeting tally only needs to be roughly current. */
-  if (now() - meetingCounts.at < 8000 && meetingCounts.total) return;
-  var c = countTerms(MEET.frags);
-  meetingCounts = { uni: c.uni, total: c.total || 1, at: now() };
+/* The meeting-wide term tally is a cumulative damping baseline for keyword
+   scoring. It used to be rebuilt by rescanning the transcript on a timer, which
+   is O(meeting) work repeated forever — the single largest source of progressive
+   slowdown in a long meeting. It is now maintained incrementally: each fragment
+   contributes once, as it arrives, and is never revisited. */
+var meetingCounts = { uni: Object.create(null), total: 0 };
+
+function countInto(counts, text) {
+  var ws = rawWords(text);
+  for (var i = 0; i < ws.length; i++) {
+    if (!isContent(ws[i])) continue;
+    var k = stemish(ws[i].replace(/'/g, ''));
+    counts.uni[k] = (counts.uni[k] || 0) + 1;
+    counts.total++;
+  }
 }
+function rebuildMeetingCounts() {
+  meetingCounts = { uni: Object.create(null), total: 0 };
+  for (var i = 0; i < MEET.frags.length; i++) countInto(meetingCounts, MEET.frags[i].text);
+}
+function refreshMeetingCounts() { /* kept incrementally; nothing to do */ }
 
 function computeChips(list) {
-  refreshMeetingCounts();
   var c = countTerms(list);
   if (!c.total) return [];
 
@@ -1943,7 +2044,7 @@ function computeChips(list) {
      about what is happening RIGHT NOW than one that just spiked. */
   function score(key, tf) {
     var seen = meetingCounts.uni[key] || tf;
-    return tf * Math.log(1 + (meetingCounts.total / (1 + seen)));
+    return tf * Math.log(1 + ((meetingCounts.total || 1) / (1 + seen)));
   }
 
   var uniScores = {};
@@ -2286,6 +2387,35 @@ function rosterAdd(name) {
             print: null, enrolled: false, samples: 0, createdAt: now(), lastSeen: 0 };
   CFG.roster.push(r); saveCfg(); renderRoster(); return r;
 }
+function renameSpeaker(id, name) {
+  var r = rosterGet(id);
+  name = String(name || '').trim().slice(0, 40);
+  if (!r || !name) return;
+  r.name = name; saveCfg(); renderRoster(); renderSoon();
+}
+
+/* Voice memory is the one thing that persists across meetings, so there has to
+   be a single obvious way to destroy all of it. */
+function clearAllSpeakers() {
+  uiConfirm('Forget every voice?',
+    'This deletes all speaker profiles and voice samples from this device permanently. Names in past ' +
+    'transcripts stay, but nobody will be recognised again until you re-enrol them.',
+    'Forget all voices', function () {
+      CFG.roster = []; currentSpeaker = '';
+      saveCfg(); renderRoster(); syncSettingsUI(); renderSoon();
+      toast('All voice profiles deleted from this device.', 'ok');
+    });
+}
+
+/* How much to trust a profile, in words rather than a number. */
+function profileConfidence(r) {
+  if (!r.enrolled || !r.print) return { label: 'no voice sample', cls: '' };
+  var n = r.samples || 1;
+  if (n >= 3) return { label: 'good — ' + n + ' samples', cls: 'ok' };
+  if (n === 2) return { label: 'fair — 2 samples', cls: 'mid' };
+  return { label: 'weak — 1 sample', cls: 'low' };
+}
+
 function rosterRemove(id) {
   CFG.roster = CFG.roster.filter(function (r) { return r.id !== id; });
   if (currentSpeaker === id) currentSpeaker = '';
@@ -4052,7 +4182,11 @@ function renderNow() {
    said — labelled as raw speech, not as a reconstruction. */
 function recentSpeechDigest() {
   var cut = now() - 120000;
-  var recent = MEET.frags.filter(function (f) { return f.t >= cut; });
+  var recent = [], fr = MEET.frags;
+  for (var k = fr.length - 1; k >= 0 && fr.length - k <= 60; k--) {
+    if (fr[k].t < cut) break;
+    recent.unshift(fr[k]);
+  }
   if (recent.length < 2) recent = MEET.frags.slice(-6);
   var out = [], lastSpk = null;
   for (var i = recent.length - 1; i >= 0 && out.length < 3; i--) {
@@ -4197,8 +4331,17 @@ function renderRoster() {
     CFG.roster.forEach(function (r) {
       var row = document.createElement('div');
       row.className = 'rosterRow';
-      row.innerHTML = '<span class="nm" style="color:' + speakerColor(r.id) + '">' + esc(r.name) + '</span>' +
-        '<span class="st' + (r.enrolled ? ' ok' : '') + '">' + (r.enrolled ? 'voice learned' : 'no voice sample') + '</span>';
+      var conf = profileConfidence(r);
+      var nm = document.createElement('input');
+      nm.className = 'nm rosterName'; nm.value = r.name;
+      nm.style.color = speakerColor(r.id);
+      nm.addEventListener('change', function () { renameSpeaker(r.id, nm.value); });
+      row.appendChild(nm);
+      var st = document.createElement('span');
+      st.className = 'st ' + conf.cls;
+      st.textContent = conf.label +
+        (r.lastSeen ? ' · heard ' + agoText(r.lastSeen) : '');
+      row.appendChild(st);
       var en = document.createElement('button');
       en.className = 'btn sm'; en.textContent = r.enrolled ? 'Redo' : 'Learn voice';
       en.addEventListener('click', function () { openEnroll(r.id); });
@@ -4268,7 +4411,11 @@ function renderTail() {
   var box = $('tail');
   $('tailSecs').textContent = TAIL_SEC;
   var cut = now() - TAIL_SEC * 1000;
-  var recent = MEET.frags.filter(function (f) { return f.t >= cut; });
+  var recent = [], allf = MEET.frags;
+  for (var ri = allf.length - 1; ri >= 0; ri--) {
+    if (allf[ri].t < cut) break;
+    recent.unshift(allf[ri]);
+  }
 
   /* Keep something on screen during a pause rather than blanking the most
      valuable panel in the app. */
@@ -4352,6 +4499,18 @@ function renderPanels() {
           tags(a, 'act', o.i) + '</li>';
       }).join('')
     : '<li class="none">None yet.</li>';
+
+  /* Four entries, newest first, current one marked. The full arc lives in the
+     timeline panel; this is only "how did we get here". */
+  var recent = MEET.timeline.slice(-4).reverse();
+  setCount('cTopics', MEET.timeline.length);
+  $('lTopics').innerHTML = recent.length
+    ? recent.map(function (x, i) {
+        return '<li' + (i === 0 ? ' class="cur"' : '') + '>' + esc(x.topic) +
+               (i === 0 ? '<span class="curTag">CURRENT</span>' : '') +
+               '<span class="who">' + hhmm(x.t) + '</span></li>';
+      }).join('')
+    : '<li class="none">Nothing yet.</li>';
 
   setCount('cQuestions', MEET.questionLog.length);
   $('lQuestions').innerHTML = MEET.questionLog.length
@@ -4506,6 +4665,145 @@ function importSettings(text) {
   saveCfg(); syncSettingsUI(); buildNameRegex(); renderSoon();
   toast(n + ' settings applied.' + (skipped ? ' ' + skipped + ' security setting' + (skipped > 1 ? 's were' : ' was') +
         ' ignored — sensitivity, backend, retention and spend cap can only be changed here.' : ''), 'ok', 9000);
+}
+
+/* ============================================================ 17a. calendar
+   No OAuth is possible from a single file with no server, and pretending
+   otherwise would be worse than not having it. What IS possible is reading a
+   .ics invite the user already has — entirely on this machine, nothing uploaded. */
+function parseIcs(text) {
+  var t = String(text || '').replace(/\r\n[ \t]/g, '');   // unfold RFC5545 wrapping
+  function field(name) {
+    var m = t.match(new RegExp('^' + name + '[^:\\r\\n]*:(.*)$', 'mi'));
+    return m ? m[1].trim() : '';
+  }
+  function icsDate(v) {
+    var m = String(v).match(/(\d{4})(\d{2})(\d{2})T?(\d{2})?(\d{2})?/);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)) : null;
+  }
+  var names = [], re = /^ATTENDEE[^:\r\n]*?CN=([^;:\r\n]+)/gmi, mm;
+  while ((mm = re.exec(t))) {
+    var nm = mm[1].replace(/^"|"$/g, '').trim();
+    if (nm.indexOf('@') > -1) nm = nm.split('@')[0].replace(/[._]/g, ' ');
+    if (nm && names.indexOf(nm) === -1) names.push(nm);
+  }
+  return { title: field('SUMMARY'), start: icsDate(field('DTSTART')), end: icsDate(field('DTEND')),
+           attendees: names.slice(0, 12),
+           description: field('DESCRIPTION').replace(/\\n/g, ' ').slice(0, 400) };
+}
+
+function applyIcs(text) {
+  var ev = parseIcs(text);
+  if (!ev.title && !ev.attendees.length) { toast('That did not look like a calendar invite.', 'err'); return false; }
+  if (ev.title) CFG.meetingTitle = ev.title.slice(0, 120);
+  if (ev.attendees.length) {
+    CFG.participants = ev.attendees.join(', ').slice(0, 300);
+    syncParticipantsToRoster();
+  }
+  if (ev.description && !CFG.context) CFG.context = ev.description;
+  saveCfg(); syncSettingsUI(); renderRoster(); renderSoon();
+  var when = ev.start ? (' ' + ev.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) +
+    (ev.end ? '\u2013' + ev.end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')) : '';
+  toast('Loaded \u201c' + (ev.title || 'invite') + '\u201d' + when + ' \u00b7 ' +
+        ev.attendees.length + ' attendees.', 'ok', 8000);
+  return true;
+}
+
+/* ============================================================ 17b. review
+   Assembled from state already captured — no extra AI call, because the spec is
+   explicit that this must not become a generated report unless asked. */
+function openReview() {
+  var dur = clockText(now() - (MEET.startedAt || now()));
+  var mine = MEET.actions.filter(function (a) { return a.mine && !a.done; });
+  var others = MEET.actions.filter(function (a) { return !a.mine && !a.done; });
+  var askedMe = MEET.questionLog.filter(function (q) { return q.target === 'user'; });
+  var openIss = MEET.issues.filter(function (i) { return !i.done; });
+  function list(arr, fmt, empty) {
+    return arr.length ? '<ul>' + arr.map(fmt).join('') + '</ul>'
+                      : '<p style="color:var(--txt-3)">' + empty + '</p>';
+  }
+  var h = [];
+  h.push('<h2>' + esc(CFG.meetingTitle || 'Meeting') + '</h2>');
+  h.push('<p style="color:var(--txt-2)">' + dur + ' \u00b7 ' + MEET.frags.length + ' turns' +
+         (CFG.participants ? ' \u00b7 ' + esc(CFG.participants) : '') + '</p>');
+  h.push('<h3>Topics</h3>');
+  h.push(list(MEET.timeline.slice(-8), function (x) { return '<li>' + esc(x.topic) + '</li>'; }, 'None recorded.'));
+  h.push('<h3>Decisions</h3>');
+  h.push(list(MEET.decisions, function (d) {
+    return '<li>' + esc(d.text) + (d.auto ? ' <em>(auto-detected)</em>' : '') +
+      (d.linkedTo ? '<br><span style="color:var(--txt-3)">led to: ' + esc(d.linkedTo) + '</span>' : '') +
+      '</li>'; }, 'None recorded.'));
+  h.push('<h3>Still open</h3>');
+  h.push(list(openIss, function (i) { return '<li>' + esc(i.text) + '</li>'; }, 'Nothing unresolved.'));
+  h.push('<h3>Asked of you</h3>');
+  h.push(list(askedMe, function (q) {
+    return '<li>' + esc(hhmm(q.t)) + ' \u2014 ' + esc(q.text) + '</li>'; },
+    'You were not directly asked anything.'));
+  h.push('<h3>Your to-dos</h3>');
+  h.push(list(mine, function (a) {
+    return '<li>' + esc(a.text) + (a.due ? ' <strong>due ' + esc(a.due) + '</strong>' : '') + '</li>'; },
+    'None assigned to you.'));
+  h.push('<h3>Other to-dos</h3>');
+  h.push(list(others, function (a) {
+    return '<li>' + (a.owner ? '<strong>' + esc(a.owner) + '</strong> \u2014 ' : '') + esc(a.text) + '</li>'; },
+    'None.'));
+  h.push('<h3>Bookmarks</h3>');
+  h.push(list(MEET.bookmarks, function (b) {
+    return '<li>' + esc(hhmm(b.t)) + (b.topic ? ' \u2014 ' + esc(b.topic) : '') +
+      (b.note ? '<br><span style="color:var(--txt-3)">' + esc(b.note) + '</span>' : '') + '</li>'; },
+    'None marked.'));
+  $('reviewBody').innerHTML = h.join('');
+  show('reviewScrim');
+}
+
+/* ============================================================ 18a. transcript
+   The dashboard stays on the present; this is where the whole meeting lives.
+   Turns are grouped by speaker so it reads like a conversation rather than a
+   wall of fragments. */
+function renderTranscript(filter) {
+  var f = String(filter || '').trim().toLowerCase();
+  var rows = MEET.frags;
+  var body = $('tsBody');
+  $('tsMeta').textContent = MEET.frags.length + ' turns · ' + clockText(now() - (MEET.startedAt || now()));
+
+  if (!rows.length) { body.innerHTML = '<div class="none">Nothing captured yet.</div>'; return; }
+
+  var bmAt = {};
+  MEET.bookmarks.forEach(function (b) { bmAt[Math.floor(b.t / 1000)] = b; });
+
+  var html = [], lastSpk = null, shown = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (f && r.text.toLowerCase().indexOf(f) === -1) continue;
+    shown++;
+    var who = r.spk ? (speakerName(r.spk) || 'Unknown Speaker') : 'Unknown Speaker';
+    var newSpeaker = (r.spk || '_') !== lastSpk;
+    lastSpk = r.spk || '_';
+    if (newSpeaker) {
+      html.push('<div class="tsTurn"><div class="tsWho" style="color:' +
+        (r.spk ? speakerColor(r.spk) : 'var(--txt-3)') + '">' + hhmm(r.t) + ' — ' + esc(who) +
+        (r.guess ? '<span class="autoTag">guessed</span>' : '') + '</div>');
+    }
+    var txt = f ? highlightFind(r.text, f) : esc(r.text);
+    html.push('<div class="tsLine">' + txt + '</div>');
+    /* a bookmark landing on this second is shown inline where it happened */
+    var bm = bmAt[Math.floor(r.t / 1000)];
+    if (bm) html.push('<div class="tsBm">&#128278; ' + esc(bm.note || bm.topic || 'Bookmarked') + '</div>');
+    if (newSpeaker) html.push('</div>');
+  }
+  body.innerHTML = shown ? html.join('') :
+    '<div class="none">No turns match \u201c' + esc(f) + '\u201d.</div>';
+}
+function highlightFind(text, f) {
+  var out = esc(text), needle = esc(f);
+  if (!needle) return out;
+  var re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  return out.replace(re, function (m) { return '<mark>' + m + '</mark>'; });
+}
+function openTranscript() {
+  $('tsFind').value = '';
+  renderTranscript('');
+  show('transcriptScrim');
 }
 
 /* ============================================================ 18b. bookmarks
@@ -4886,6 +5184,26 @@ function syncSettingsUI() {
   /* api-only controls are hidden entirely from someone who will never use a key */
   $('apiFset').classList.toggle('hidden', CFG.backend !== 'api');
 
+  /* Stated per-setting rather than as a blanket promise, because the honest
+     answer changes depending on which engine and backend are selected. */
+  var privRows = [
+    ['Meeting audio', CFG.engine === 'whisper' ? ['Stays on this device', 'ok']
+       : ['Sent to Google to be transcribed', 'warn']],
+    ['Transcript text', CFG.sensitive ? ['Stays on this device', 'ok']
+       : (CFG.backend === 'api' ? ['Sent to the Anthropic API', 'warn']
+       : (CFG.backend === 'handoff' ? ['Only when you press Catch me up, to claude.ai', 'warn']
+       : ['Stays on this device', 'ok']))],
+    ['Recorded audio', ['Never stored — transcribed and discarded', 'ok']],
+    ['Transcript storage', ['This browser only, purged after ' + CFG.retentionDays + ' days', 'ok']],
+    ['Voice profiles', ['This browser only, as pitch/tone numbers — never audio', 'ok']],
+    ['API key', CFG.apiKey ? ['Stored in this browser only', 'warn'] : ['None entered', 'ok']]
+  ];
+  var pr = $('privacyRows');
+  if (pr) pr.innerHTML = privRows.map(function (r) {
+    return '<div class="privRow"><span class="pk">' + esc(r[0]) + '</span>' +
+           '<span class="pv ' + r[1][1] + '">' + esc(r[1][0]) + '</span></div>';
+  }).join('');
+
   var p = priceOf(CFG.model);
   $('priceHint').textContent = p.label + ' — $' + p.in.toFixed(2) + ' per 1M input tokens, $' +
     p.out.toFixed(2) + ' per 1M output. A typical ambient call is a few thousand input tokens.';
@@ -4960,6 +5278,15 @@ function bindSettings() {
     if (listening) toast('Restart listening for the new engine to take effect.', 'warn');
   });
   on('btnAudioHelp', 'click', function () { show('audioHelpScrim'); });
+  on('btnClearVoices', 'click', clearAllSpeakers);
+  on('icsFile', 'change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var fr = new FileReader();
+    fr.onload = function () { applyIcs(fr.result); };
+    fr.onerror = function () { toast('Could not read that file.', 'err'); };
+    fr.readAsText(f);
+  });
   on('setAllowCdn', 'change', function () { CFG.allowCdn = this.checked; saveCfg(); });
   on('setAutoSpeaker', 'change', function () {
     CFG.autoSpeaker = this.checked; saveCfg();
@@ -5064,6 +5391,22 @@ function bindUI() {
   $('btnCatchup').addEventListener('click', catchMeUp);
   $('btnSettings').addEventListener('click', function () {
     document.body.classList.toggle('settingsOpen'); syncSettingsInert();
+  });
+  $('btnReview').addEventListener('click', openReview);
+  $('reviewTranscript').addEventListener('click', function () { hide('reviewScrim'); openTranscript(); });
+  $('reviewScrim').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-x3]') : null;
+    if (!b) return;
+    var k = b.getAttribute('data-x3');
+    if (k === 'md') exportMarkdown(); else if (k === 'strety') exportStretyBlock();
+  });
+  $('btnTranscript').addEventListener('click', openTranscript);
+  $('tsFind').addEventListener('input', function () { renderTranscript(this.value); });
+  $('transcriptScrim').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-x2]') : null;
+    if (!b) return;
+    var k = b.getAttribute('data-x2');
+    if (k === 'txt') exportText(); else if (k === 'md') exportMarkdown(); else if (k === 'json') exportJson();
   });
   $('btnBookmark').addEventListener('click', addBookmark);
   $('btnExport').addEventListener('click', function (e) {
@@ -5229,6 +5572,8 @@ function bindUI() {
       case 's': e.preventDefault(); document.body.classList.toggle('settingsOpen'); syncSettingsInert(); break;
       case 'd': e.preventDefault(); dismissAlert(); break;
       case 'b': e.preventDefault(); addBookmark(); break;
+      case 't': e.preventDefault(); openTranscript(); break;
+      case 'r': e.preventDefault(); openReview(); break;
       case 'e': e.preventDefault(); exportMarkdown(); break;
       case 'v': e.preventDefault(); setDiscreet(!CFG.discreet); break;
     }
