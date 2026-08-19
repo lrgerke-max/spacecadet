@@ -67,13 +67,17 @@
 
     /* text */
     --txt:#1e1f24;
-    --txt-2:#6b7280;
-    --txt-3:#9aa0a6;
+    --txt-2:#5f6670;        /* 5.4:1 on the page background */
+    --txt-3:#656b74;        /* 5.0:1 — was #9aa0a6 at 2.4:1, failing AA everywhere */
+    --dim:#5f6670;          /* legacy aliases, previously undefined and inheriting full-strength text */
+    --dim2:#656b74;
     --nav-txt:#e8e8ea;
 
     /* accents — Strety's segment palette */
-    --org:#f58220;          /* the one primary action colour */
-    --org-dk:#dd7015;
+    --org:#f58220;          /* brand accent: borders, focus ring, spectrum */
+    --org-btn:#b45309;      /* filled buttons with white text — 5.0:1. #f58220 was 2.6:1 */
+    --org-btn-dk:#9a4a08;
+    --org-dk:#b45309;
     --pink:#db2777;
     --amber:#f59e0b;
     --cyan:#0891b2;
@@ -150,15 +154,15 @@
   .btn:active{background:#f0f0f2}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn .k{
-    font-family:var(--mono);font-size:9.5px;color:var(--txt-3);background:var(--bg);
+    font-family:var(--mono);font-size:9.5px;color:var(--txt-2);background:var(--bg);
     border:1px solid var(--line);border-radius:3px;padding:0 3px;line-height:14px;
   }
-  .btn.primary{background:var(--org);border-color:var(--org);color:#fff;font-weight:600}
-  .btn.primary:hover{background:var(--org-dk);border-color:var(--org-dk)}
-  .btn.primary .k{background:#ffffff2e;border-color:#ffffff45;color:#fff}
-  .btn.go{background:#0f9d58;border-color:#0f9d58;color:#fff;font-weight:600}
-  .btn.go:hover{background:#0c8449;border-color:#0c8449}
-  .btn.go .k{background:#ffffff2e;border-color:#ffffff45;color:#fff}
+  .btn.primary{background:var(--org-btn);border-color:var(--org-btn);color:#fff;font-weight:600}
+  .btn.primary:hover{background:var(--org-btn-dk);border-color:var(--org-btn-dk)}
+  .btn.primary .k{background:#ffffff33;border-color:#ffffff8a;color:#fff}
+  .btn.go{background:#0b7a44;border-color:#0b7a44;color:#fff;font-weight:600}
+  .btn.go:hover{background:#096535;border-color:#096535}
+  .btn.go .k{background:#ffffff33;border-color:#ffffff8a;color:#fff}
   .btn.stop{background:#fff;border-color:#f3c2c2;color:#b91c1c;font-weight:600}
   .btn.stop:hover{background:#fef2f2;border-color:#e9a8a8}
   .btn.sm{padding:5px 8px;font-size:12px}
@@ -175,7 +179,7 @@
   #backendSwitch .seg.on{background:var(--card);color:var(--txt);font-weight:600;
     box-shadow:0 1px 2px rgba(16,24,40,.08);}
   #backendSwitch .seg.on[data-b="handoff"]{color:#0f7a43}
-  #backendSwitch .seg.on[data-b="api"]{color:var(--org-dk)}
+  #backendSwitch .seg.on[data-b="api"]{color:#9a4a08}
   #backendSwitch .seg.on[data-b="local"]{color:var(--purple)}
   .switchLabel{font-size:11px;color:var(--txt-3);margin-left:2px}
 
@@ -210,7 +214,12 @@
   #awayClose{margin-left:auto;flex:0 0 auto}
 
   #alertZone{
-    flex:0 0 auto;margin:10px 12px 0;padding:13px 14px;border-radius:var(--radius);
+    /* A column: the content scrolls, the action row never does. min-height stops
+       it collapsing to a sliver on a short viewport and taking its own buttons
+       out of the box with it. */
+    flex:0 1 auto;display:flex;flex-direction:column;
+    min-height:112px;max-height:52vh;overflow:hidden;
+    margin:10px 12px 0;padding:13px 14px;border-radius:var(--radius);
     background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid var(--red);
     box-shadow:0 2px 10px rgba(220,38,38,.10);animation:alertIn .16s ease-out;
   }
@@ -222,7 +231,7 @@
   #alertZone.soft #alertKind{color:#92400e}
   #alertAgo{font-size:11.5px;color:#b91c1c;font-variant-numeric:tabular-nums}
   #alertZone.soft #alertAgo{color:#b45309}
-  #alertQ{margin-top:6px;font-size:clamp(13.5px,1.8vw,15.5px);line-height:1.45;color:#450a0a}
+  #alertQ{margin-top:6px;font-size:clamp(13.5px,1.8vw,15.5px);line-height:1.45;color:#450a0a;overflow-wrap:anywhere}
   #alertZone.soft #alertQ{color:#451a03}
   #alertQ em{font-style:normal;font-weight:700;background:#fecaca;border-radius:3px;padding:0 3px;color:#7f1d1d}
   #alertZone.soft #alertQ em{background:#fde68a;color:#78350f}
@@ -232,7 +241,10 @@
     border:1px solid #fecaca;border-radius:var(--radius-sm);
   }
   #alertZone.soft #alertPoints li{color:#451a03;border-color:#fde68a}
-  #alertBar{display:flex;gap:6px;margin-top:9px;align-items:center;flex-wrap:wrap}
+  #alertScroll{flex:1 1 auto;min-height:0;overflow-y:auto}
+  #alertBar{flex:0 0 auto;display:flex;gap:6px;margin-top:9px;align-items:center;flex-wrap:wrap;
+    padding-top:8px;border-top:1px solid #fecaca}
+  #alertZone.soft #alertBar{border-top-color:#fde68a}
   #alertSrc{font-size:10.5px;color:var(--txt-3)}
 
   /* ================================================================ now */
@@ -276,14 +288,14 @@
   .chipEmpty{color:var(--txt-3);font-size:12.5px}
 
   #bullets{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
-  #bullets li{font-size:13.5px;line-height:1.45;padding-left:14px;position:relative;color:var(--txt)}
+  #bullets li{font-size:13.5px;line-height:1.45;padding-left:14px;position:relative;color:var(--txt);overflow-wrap:anywhere}
   #bullets li:before{content:"";position:absolute;left:0;top:.55em;width:5px;height:5px;
     border-radius:50%;background:var(--purple)}
 
   /* =========================================================== transcript */
   #tail{
     flex:1 1 auto;min-height:0;overflow-y:auto;font-size:var(--tail-size);line-height:1.6;
-    color:var(--txt);scroll-behavior:smooth;
+    color:var(--txt);scroll-behavior:smooth;overflow-wrap:anywhere;
   }
   #tail .interim{color:var(--txt-3);font-style:italic}
   #tail .hit{background:#fee2e2;border-radius:3px;padding:0 2px;font-weight:600;color:#991b1b}
@@ -313,12 +325,12 @@
   .panel[open]>summary{border-bottom:1px solid var(--line-2)}
   .panel .body{padding:10px 13px 12px;font-size:13px;line-height:1.5}
   .panel .body ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
-  .panel .body li{padding-left:0;position:relative;color:var(--txt)}
+  .panel .body li{padding-left:0;position:relative;color:var(--txt);overflow-wrap:anywhere}
   .panel .body .none{color:var(--txt-3);font-style:normal;font-size:12.5px}
   li.mine{background:#fff7ed;border:1px solid #fed7aa;border-left:3px solid var(--org);
     border-radius:var(--radius-sm);padding:7px 9px;color:#7c2d12}
   li .who{font-size:10.5px;color:var(--txt-3);margin-left:6px;font-weight:500}
-  li.mine .who{color:var(--org-dk);font-weight:700}
+  li.mine .who{color:#8a4208;font-weight:700}
   .tlRow{display:flex;gap:8px;align-items:baseline}
   .tlRow .tm{font-size:11px;color:var(--txt-3);flex:0 0 auto;font-variant-numeric:tabular-nums}
   .glossTerm{color:var(--purple);font-weight:600}
@@ -347,6 +359,8 @@
   #segbar{
     flex:0 0 auto;display:flex;gap:4px;padding:7px 12px;background:var(--card);
     border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;
+    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent);
+    mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent);
   }
   #segbar::-webkit-scrollbar{display:none}
   .segp{
@@ -361,6 +375,35 @@
   .segp.on[data-seg="Headlines"]{background:#fefce8;border-color:#fde68a;color:#a16207}
   .segp.on[data-seg="IDS"]{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
   .segp.on[data-seg="Conclude"]{background:#f5f3ff;border-color:#ddd6fe;color:#6d28d9}
+
+  /* who is speaking */
+  #rosterbar{
+    flex:0 0 auto;display:flex;gap:5px;align-items:center;padding:7px 12px;background:var(--card);
+    border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;
+  }
+  #rosterbar::-webkit-scrollbar{display:none}
+  #rosterEmpty{font-size:11.5px;color:var(--txt-3);white-space:nowrap}
+  .spk{
+    flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);
+    background:var(--card);color:var(--txt-2);font-size:12px;font-weight:500;padding:3px 9px;
+    border-radius:999px;white-space:nowrap;transition:background .12s,border-color .12s;
+  }
+  .spk:hover{background:var(--hover)}
+  .spk .num{font-size:9.5px;color:var(--txt-3);font-family:var(--mono)}
+  .spk .vdot{width:5px;height:5px;border-radius:50%;background:var(--line)}
+  .spk.hasVoice .vdot{background:var(--green)}
+  .spk.on{color:#fff;font-weight:600}
+  .spk.on .num,.spk.on .vdot{color:#fff;background:#ffffff9c}
+  #tail .spkLabel{font-weight:700;font-size:.82em;margin-right:5px;letter-spacing:.01em}
+  #tail .spkGuess{opacity:.72}
+  #enrollMeter{height:8px;background:var(--bg);border-radius:999px;overflow:hidden;margin-top:12px;
+    border:1px solid var(--line)}
+  #enrollFill{height:100%;width:0;background:var(--green);transition:width .2s}
+  .rosterRow{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid var(--line-2);
+    font-size:13px}
+  .rosterRow .nm{flex:1 1 auto;font-weight:500}
+  .rosterRow .st{font-size:11px;color:var(--txt-3)}
+  .rosterRow .st.ok{color:#047857;font-weight:600}
 
   /* first-run choice cards */
   .choice{
@@ -411,7 +454,7 @@
   #panicHint{position:fixed;bottom:8px;right:12px;font-size:10px;color:#ededed}
 
   /* ============================================================== overlays */
-  .scrim{position:fixed;inset:0;background:rgba(16,24,40,.45);z-index:400;display:flex;
+  .scrim{position:fixed;inset:0;background:rgba(16,24,40,.45);z-index:600;display:flex;
     align-items:center;justify-content:center;padding:16px}
   .modal{
     background:var(--card);border-radius:12px;width:min(680px,100%);max-height:90vh;
@@ -569,6 +612,13 @@
     <button class="segp" data-seg="Conclude">Conclude</button>
   </div>
 
+  <!-- Who is speaking. Click a name (or press its number) to attribute what
+       follows to them; it stays until you change it. -->
+  <div id="rosterbar">
+    <span id="rosterEmpty">Add who is in the room in Settings, then click a name as they speak &rarr;</span>
+    <button class="btn sm icon" id="btnRosterAdd" title="Add someone to the room">+</button>
+  </div>
+
   <!-- --------------------------------------------- while you were away -->
   <div id="away" class="hidden">
     <span id="awayText"></span>
@@ -578,12 +628,14 @@
   <!-- ---------------------------------------------------------- ALERT -->
   <!-- Visually dominant when active, entirely absent when not. -->
   <section id="alertZone" class="hidden" aria-live="assertive">
-    <div id="alertHead">
-      <div id="alertKind">YOU WERE ASKED SOMETHING</div>
-      <div id="alertAgo">just now</div>
+    <div id="alertScroll">
+      <div id="alertHead">
+        <div id="alertKind">YOU WERE ASKED SOMETHING</div>
+        <div id="alertAgo">just now</div>
+      </div>
+      <div id="alertQ"></div>
+      <ul id="alertPoints"></ul>
     </div>
-    <div id="alertQ"></div>
-    <ul id="alertPoints"></ul>
     <div id="alertBar">
       <button class="btn sm" id="alertDismiss">Dismiss <span class="k">D</span></button>
       <button class="btn sm primary" id="alertCatchup">Get talking points <span class="k">C</span></button>
@@ -680,7 +732,7 @@
   <div class="modal">
     <header>
       <h2 id="handoffTitle">Catch me up — paste into Claude</h2>
-      <button class="x" data-close="handoffScrim">×</button>
+      <button class="x" aria-label="Close" data-close="handoffScrim">×</button>
     </header>
     <div class="body">
       <div id="handoffStatus" class="warn ok" style="margin-top:0"></div>
@@ -712,7 +764,7 @@
   <div class="modal">
     <header>
       <h2>Catch me up</h2>
-      <button class="x" data-close="catchupScrim">×</button>
+      <button class="x" aria-label="Close" data-close="catchupScrim">×</button>
     </header>
     <div class="body md" id="catchupBody"></div>
     <footer>
@@ -768,6 +820,26 @@
   </div>
 </div>
 
+<div class="scrim hidden" id="enrollScrim">
+  <div class="modal" style="max-width:460px">
+    <header><h2 id="enrollTitle">Learn a voice</h2></header>
+    <div class="body">
+      <p style="margin-top:0" id="enrollWho"></p>
+      <p style="font-size:13px;color:var(--txt-2)">Have them talk normally — reading anything is fine.
+        About eight seconds is enough. Everyone else should stay quiet.</p>
+      <div id="enrollMeter"><div id="enrollFill"></div></div>
+      <div id="enrollCount" style="font-size:12px;color:var(--txt-3);margin-top:6px">Waiting for speech…</div>
+      <div class="warn" style="margin-top:12px">Voice matching is approximate. It works with a handful of
+        clearly different voices in decent audio, and gets confused by similar voices, crosstalk and
+        speakerphones. Anything it guesses is marked with a <b>?</b> — click the right name to correct it.</div>
+    </div>
+    <footer>
+      <button class="btn primary" id="enrollDone">Save voice</button>
+      <button class="btn" data-close="enrollScrim">Cancel</button>
+    </footer>
+  </div>
+</div>
+
 <div class="scrim hidden" id="confirmScrim">
   <div class="modal" style="max-width:440px">
     <header><h2 id="confirmTitle">Are you sure?</h2></header>
@@ -784,7 +856,7 @@
   <header>
     <h2>Settings</h2>
     <button class="x" style="margin-left:auto;background:transparent;border:0;color:var(--dim);font-size:22px"
-      id="settingsClose">×</button>
+      id="settingsClose" aria-label="Close settings">×</button>
   </header>
   <div class="body">
 
@@ -867,6 +939,27 @@
     </div>
 
     <div class="fset">
+      <h3>Who is in the room</h3>
+      <div class="row">
+        <label for="setRosterAdd">Add a person</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="setRosterAdd" placeholder="Name, then Enter">
+          <button class="btn sm" id="btnRosterAdd2">Add</button>
+        </div>
+        <div class="hint">Click a name in the bar at the top (or press its number key) as each person speaks.
+          What follows is attributed to them, which is what gives to-dos a real owner.</div>
+      </div>
+      <div id="rosterList"></div>
+      <div class="row inline" style="margin-top:10px">
+        <label for="setAutoSpeaker">Also try to recognise voices automatically</label>
+        <input type="checkbox" id="setAutoSpeaker">
+      </div>
+      <div class="hint">Needs a short voice sample per person, recorded while listening is running. Guessed
+        names are shown with a <b>?</b> and never overwrite a name you picked yourself. Microphone source
+        only — a shared system-audio stream is one mixed channel, so it cannot be separated this way.</div>
+    </div>
+
+    <div class="fset">
       <h3>Meeting sensitivity</h3>
       <div class="row inline">
         <label for="setSensitive">Sensitive meeting — nothing may leave this device</label>
@@ -889,6 +982,13 @@
         <label for="setQPatterns">Also alert on open questions with no name (“any thoughts?”)</label>
         <input type="checkbox" id="setQPatterns">
       </div>
+      <div class="row inline">
+        <label for="setPanicStop">Hiding with <b>Esc</b> also stops the microphone</label>
+        <input type="checkbox" id="setPanicStop">
+      </div>
+      <div class="hint">Esc always blanks the screen instantly either way. Leave this off to keep the
+        transcript running while the screen is hidden. Turn it on if you would rather not have audio
+        captured behind a blank screen.</div>
       <div class="row inline">
         <label for="setChime">Soft chime on alert</label>
         <input type="checkbox" id="setChime">
@@ -1228,7 +1328,10 @@ var DEFAULTS = {
   retentionDays: 7,            // stored meeting auto-purges after this many days
   spendCapUsd: 5,              // api backend stops itself at this session spend
   firstRunDone: false,         // has the user made the transcription choice yet
+  panicStopsCapture: false,    // Esc hides instantly either way; this decides whether it also cuts the mic
   segment: '',                 // current Level 10 agenda segment
+  roster: [],                  // [{id,name,print,enrolled}] — who is in the room
+  autoSpeaker: false,          // attempt voice matching as well as manual tagging
   model: 'claude-sonnet-5',
   intervalSec: 90,
   source: 'mic',               // mic | system
@@ -1250,7 +1353,35 @@ var DEFAULTS = {
    re-acknowledge before a single sample of anyone's voice is captured. */
 var consentGiven = false;
 
+/* Numeric settings are clamped where they ENTER, not only where they are used:
+   an out-of-range value that merely disables a feature (alertTtlSec:-1 turns off
+   every alert) is worse than one that throws. */
+var SETTING_RANGE = {
+  intervalSec:[30,300], chunkSec:[10,30], alertTtlSec:[15,600], windowMin:[5,20],
+  topicTh:[0.1,0.9], retentionDays:[1,90], spendCapUsd:[0,500]
+};
+function clampSetting(k, v) {
+  var r = SETTING_RANGE[k];
+  return r ? clamp(v, r[0], r[1]) : v;
+}
+function sanitizeRoster(v) {
+  if (!Array.isArray(v)) return [];
+  return v.filter(function (r) { return r && typeof r === 'object' && typeof r.name === 'string' && r.name; })
+          .slice(0, 12)
+          .map(function (r) {
+            return { id: String(r.id || ('s' + Math.random().toString(36).slice(2))),
+                     name: String(r.name).slice(0, 40),
+                     print: Array.isArray(r.print) ? r.print.slice(0, 32).map(Number) : null,
+                     enrolled: !!r.enrolled && Array.isArray(r.print) };
+          });
+}
+
 var CFG = load(SETTINGS_KEY, DEFAULTS);
+/* load() checks that roster is an array; this checks the entries inside it, so a
+   stored [null] cannot throw inside renderRoster() before the tick loop starts. */
+CFG.roster = sanitizeRoster(CFG.roster);
+for (var _k in SETTING_RANGE) if (typeof CFG[_k] === 'number') CFG[_k] = clampSetting(_k, CFG[_k]);
+
 function load(key, defaults) {
   var out = {};
   for (var k in defaults) out[k] = defaults[k];
@@ -1258,7 +1389,17 @@ function load(key, defaults) {
     var raw = localStorage.getItem(key);
     if (raw) {
       var p = JSON.parse(raw);
-      for (var j in defaults) if (p[j] !== undefined && p[j] !== null) out[j] = p[j];
+      for (var j in defaults) {
+        var v = p[j];
+        if (v === undefined || v === null) continue;
+        /* Type-check every stored value. On file:// all local pages share one
+           localStorage origin, so anything else the user opens could otherwise
+           plant a string where a number belongs and have it reach innerHTML. */
+        if (typeof v !== typeof defaults[j]) continue;
+        if (Array.isArray(defaults[j]) !== Array.isArray(v)) continue;
+        if (typeof v === 'number' && !isFinite(v)) continue;
+        out[j] = v;
+      }
     }
   } catch (e) { /* corrupt or unavailable storage: defaults are fine */ }
   return out;
@@ -1278,7 +1419,7 @@ function saveCfg() {
    The rolling window governs everything analytical — see windowFrags(). */
 var MEET = {
   startedAt: 0,
-  frags: [],          // {t, text, final:true}
+  frags: [],          // {t, text, spk} — spk is the speaker id, '' if unattributed
   decisions: [],      // {text, t, segment, auto}
   issues: [],         // {text, t, segment, auto}  — the EOS IDS list
   actions: [],        // {text, owner, mine, t}
@@ -1301,17 +1442,37 @@ function restoreMeeting() {
     if (!p || !p.startedAt) return false;
 
     /* Retention is enforced, not left to somebody remembering to click Erase. */
-    var ageDays = (now() - (p.savedAt || p.startedAt)) / 86400000;
-    if (ageDays > clamp(CFG.retentionDays, 1, 90)) {
+    /* A negative age means a future timestamp — a tampered or clock-skewed
+       record. Treat it as untrustworthy and purge rather than keep it forever. */
+    var savedAt = Number(p.savedAt || p.startedAt);
+    var ageDays = isFinite(savedAt) ? (now() - savedAt) / 86400000 : Infinity;
+    if (!isFinite(ageDays) || ageDays > clamp(CFG.retentionDays, 1, 90) || ageDays < -1) {
       try { localStorage.removeItem(MEETING_KEY); } catch (e) {}
       toast('A stored meeting older than ' + CFG.retentionDays + ' days was purged automatically.', '', 7000);
       return false;
     }
-    ['startedAt','decisions','issues','actions','glossary','timeline','alerts','cost',
-     'lastSentT','llmTopic','llmBullets','llmTalkingPoints','llmAt'].forEach(function (k) {
-      if (p[k] !== undefined && p[k] !== null) MEET[k] = p[k];
-    });
-    MEET.frags = Array.isArray(p.frags) ? p.frags : [];
+    /* Everything restored is shape-checked. Previously a single tampered field
+       ("decisions":"x") threw inside render(), which happens BEFORE the 500ms
+       tick loop is installed — so the app froze permanently, across reloads. */
+    function arrOf(v, test) { return Array.isArray(v) ? v.filter(test) : []; }
+    var hasText = function (x) { return x && typeof x === 'object' && typeof x.text === 'string'; };
+    MEET.decisions = arrOf(p.decisions, hasText);
+    MEET.issues    = arrOf(p.issues, hasText);
+    MEET.actions   = arrOf(p.actions, hasText);
+    MEET.glossary  = arrOf(p.glossary, function (x) { return x && typeof x === 'object' && typeof x.term === 'string'; });
+    MEET.timeline  = arrOf(p.timeline, function (x) { return x && typeof x === 'object' && typeof x.topic === 'string'; });
+    MEET.alerts    = arrOf(p.alerts, function (x) { return x && typeof x === 'object'; });
+    MEET.frags     = arrOf(p.frags, function (x) { return x && typeof x === 'object' && typeof x.text === 'string'; });
+    MEET.cost = (p.cost && typeof p.cost === 'object' && isFinite(p.cost.usd))
+      ? { inTok: +p.cost.inTok || 0, outTok: +p.cost.outTok || 0, calls: +p.cost.calls || 0, usd: +p.cost.usd || 0 }
+      : { inTok: 0, outTok: 0, calls: 0, usd: 0 };
+    MEET.startedAt = isFinite(p.startedAt) ? +p.startedAt : now();
+    MEET.lastSentT = isFinite(p.lastSentT) ? +p.lastSentT : 0;
+    MEET.llmTopic = typeof p.llmTopic === 'string' ? p.llmTopic : '';
+    MEET.llmBullets = arrOf(p.llmBullets, function (x) { return typeof x === 'string'; });
+    MEET.llmTalkingPoints = arrOf(p.llmTalkingPoints, function (x) { return typeof x === 'string'; });
+    MEET.llmAt = isFinite(p.llmAt) ? +p.llmAt : 0;
+    reindexItems();
     return true;
   } catch (e) { return false; }
 }
@@ -1326,13 +1487,18 @@ function doSaveMeeting() {
   /* Persist a capped tail of the transcript: localStorage is ~5MB and a long
      meeting will happily exceed it. Everything else is small. */
   var cap = 900;
-  var attempt = function (n) {
+  /* The fallback used to trim only frags, so a meeting heavy in decisions or
+     to-dos failed both attempts identically and the whole record was dropped.
+     Everything unbounded is trimmed on the retry. */
+  var attempt = function (n, itemCap) {
+    itemCap = itemCap || 500;
     var snap = {
       savedAt: now(),
       startedAt: MEET.startedAt,
       frags: MEET.frags.slice(-n),
-      decisions: MEET.decisions, issues: MEET.issues, actions: MEET.actions, glossary: MEET.glossary,
-      timeline: MEET.timeline, alerts: MEET.alerts.slice(-40), cost: MEET.cost,
+      decisions: MEET.decisions.slice(-itemCap), issues: MEET.issues.slice(-itemCap),
+      actions: MEET.actions.slice(-itemCap), glossary: MEET.glossary.slice(-itemCap),
+      timeline: MEET.timeline.slice(-200), alerts: MEET.alerts.slice(-40), cost: MEET.cost,
       lastSentT: MEET.lastSentT, llmTopic: MEET.llmTopic, llmBullets: MEET.llmBullets,
       llmTalkingPoints: MEET.llmTalkingPoints, llmAt: MEET.llmAt,
       truncated: MEET.frags.length > n
@@ -1341,10 +1507,13 @@ function doSaveMeeting() {
   };
   try { attempt(cap); }
   catch (e) {
-    try { attempt(250); }
+    try { attempt(250, 150); }
     catch (e2) {
-      try { localStorage.removeItem(MEETING_KEY); } catch (e3) {}
-      status('storage full — meeting will not survive a refresh', 'warn');
+      try { attempt(60, 40); }
+      catch (e3) {
+        try { localStorage.removeItem(MEETING_KEY); } catch (e4) {}
+        status('Storage is full — this meeting will not survive a refresh.', 'warn');
+      }
     }
   }
 }
@@ -1354,6 +1523,7 @@ function resetMeeting() {
   MEET.glossary = []; MEET.timeline = []; MEET.alerts = [];
   MEET.cost = { inTok: 0, outTok: 0, calls: 0, usd: 0 };
   MEET.lastSentT = 0; MEET.llmTopic = ''; MEET.llmBullets = []; MEET.llmTalkingPoints = []; MEET.llmAt = 0;
+  reindexItems();
   VIEW.topic = ''; VIEW.topicSrc = 'local'; VIEW.topicAt = 0; VIEW.bullets = [];
   VIEW.chips = []; VIEW.alert = null; VIEW.lastTopicVec = null; VIEW.lastChangeAt = 0;
   try { localStorage.removeItem(MEETING_KEY); } catch (e) {}
@@ -1382,20 +1552,29 @@ var VIEW = {
 /* Fragments are appended finalised-only. Interim text lives in VIEW.interim and is
    overwritten, never accumulated — speech engines re-emit a growing interim string
    for the same utterance and appending it would triple-count every word. */
-function addFragment(text, t) {
-  text = String(text || '').replace(/\s+/g, ' ').trim();
+function addFragment(text, t, spk) {
+  /* A single enormous fragment cost half a second to ingest and ~100ms on every
+     render frame afterwards. Real speech never arrives in 5MB blocks. */
+  text = String(text || '').slice(0, 4000).replace(/\s+/g, ' ').trim();
   if (!text) return;
   if (!MEET.startedAt) { MEET.startedAt = t; }
-  MEET.frags.push({ t: t, text: text });
+  MEET.frags.push({ t: t, text: text, spk: spk || currentSpeaker || '', guess: !!fragGuess });
+  fragGuess = false;
   saveMeeting();
 }
+var fragGuess = false;          // set when the current speaker came from voice matching
 
 function windowMs() { return clamp(CFG.windowMin, 5, 20) * 60 * 1000; }
 
 /* The analytical window. The full log stays in MEET.frags for export + catch-up. */
 function windowFrags() {
-  var cut = now() - windowMs();
-  var out = [], f = MEET.frags;
+  var f = MEET.frags;
+  /* Anchor to the newest fragment, not the wall clock. After an NTP correction
+     or a sleep/resume the clock can move backwards, which made every fragment
+     look like the future and turned this into a full-array scan every tick. */
+  var newest = f.length ? f[f.length - 1].t : now();
+  var cut = Math.max(now(), newest) - windowMs();
+  var out = [];
   for (var i = f.length - 1; i >= 0; i--) {
     if (f[i].t < cut) break;
     out.push(f[i]);
@@ -1564,13 +1743,22 @@ function localTopicLabel() {
 
 var nameRe = null, nameReSrc = '';
 function buildNameRegex() {
-  var src = String(CFG.names || '');
+  var src = String(CFG.names || '').slice(0, 500);       // beyond this the regex will not compile
   if (src === nameReSrc) return nameRe;
   nameReSrc = src;
-  var parts = src.split(',').map(function (s) { return s.trim(); })
+  var parts = src.split(',').map(function (s) { return s.trim().slice(0, 40); })
                  .filter(function (s) { return s.length >= 2; })
+                 .slice(0, 50)
                  .map(function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
-  nameRe = parts.length ? new RegExp('\\b(' + parts.join('|') + ')\\b', 'i') : null;
+  /* V8 compiles lazily, so an oversized pattern throws later inside exec() —
+     which lands in render() and freezes the app. Compile-test it here. */
+  try {
+    nameRe = parts.length ? new RegExp('\\b(' + parts.join('|') + ')\\b', 'i') : null;
+    if (nameRe) nameRe.test('probe');
+  } catch (e) {
+    nameRe = null;
+    status('That list of names could not be used — shorten it.', 'err');
+  }
   return nameRe;
 }
 
@@ -1633,7 +1821,7 @@ function scanFragment(text, t) {
   fireAlert({
     kind: kind,
     severity: severity,
-    who: '',                                    // no diarization: we honestly do not know
+    who: speakerName(currentSpeaker),           // real name when a speaker is selected
     question: extractQuestion(text, matchIdx),
     at: t,
     points: [],
@@ -1725,6 +1913,63 @@ function chime(severity) {
   } catch (e) { /* audio is a nicety, never a failure path */ }
 }
 
+/* ---- 7d1b. SPEAKERS ---------------------------------------------------
+   Two layers, because only one of them is reliable.
+
+   MANUAL is the ground truth: a roster of who is in the room, and the current
+   speaker set by clicking a chip or pressing 1-9. It is sticky — whoever you
+   last selected keeps getting credit until you change it, which matches how a
+   meeting actually runs (one person talks for a while, then another).
+
+   VOICE MATCHING is an assist layered on top. It is genuinely approximate: it
+   compares cheap acoustic features (pitch, spectral shape, band energies) to a
+   short enrolment sample per person. It does well with a few clearly different
+   voices in decent audio and badly with similar voices, crosstalk, or someone
+   on speakerphone. It therefore only ever OVERRIDES the manual selection when
+   it is confidently above threshold AND clearly ahead of the runner-up, it
+   marks anything it decided with a "?" so an inferred name never looks like a
+   confirmed one, and the manual chip always wins if you touch it. This is not
+   real diarization and the UI never claims it is. */
+
+var currentSpeaker = '';        // roster id of whoever is speaking now
+
+function rosterGet(id) {
+  for (var i = 0; i < CFG.roster.length; i++) if (CFG.roster[i].id === id) return CFG.roster[i];
+  return null;
+}
+function speakerName(id) {
+  var r = rosterGet(id);
+  return r ? r.name : '';
+}
+function rosterAdd(name) {
+  name = String(name || '').trim();
+  if (!name) return null;
+  if (CFG.roster.length >= 12) { toast('Twelve people is the most the roster holds.', 'warn'); return null; }
+  var exists = CFG.roster.filter(function (r) { return normKey(r.name) === normKey(name); })[0];
+  if (exists) return exists;
+  var r = { id: 's' + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name, print: null, enrolled: false };
+  CFG.roster.push(r); saveCfg(); renderRoster(); return r;
+}
+function rosterRemove(id) {
+  CFG.roster = CFG.roster.filter(function (r) { return r.id !== id; });
+  if (currentSpeaker === id) currentSpeaker = '';
+  saveCfg(); renderRoster(); renderSoon();
+}
+function setSpeaker(id, fromVoice) {
+  currentSpeaker = (currentSpeaker === id && !fromVoice) ? '' : id;
+  if (!fromVoice) speakerLockedAt = now();   // a manual pick beats voice matching for a while
+  renderRoster(); renderSoon();
+}
+var speakerLockedAt = 0;
+
+/* Stable colour per roster position so the same person reads the same way. */
+var SPK_COLORS = ['#2563eb','#c2410c','#047857','#6d28d9','#b91c1c','#0891b2',
+                  '#a16207','#be185d','#4338ca','#15803d','#9a3412','#7c3aed'];
+function speakerColor(id) {
+  for (var i = 0; i < CFG.roster.length; i++) if (CFG.roster[i].id === id) return SPK_COLORS[i % SPK_COLORS.length];
+  return '#6b7280';
+}
+
 /* ---- 7d2. LOCAL EXTRACTION -------------------------------------------
    Without this, Decisions/To-dos/Issues only ever populate from a Claude call,
    so the free default captured nothing at all unless the user did a five-step
@@ -1743,10 +1988,13 @@ function sentencesOf(text) {
 
 function localExtract(text) {
   var sents = sentencesOf(text);
+  /* "I'll take that" is only useful if we know who "I" was. With a speaker
+     selected the to-do gets a real owner instead of a blank. */
+  var who = speakerName(currentSpeaker);
   for (var i = 0; i < sents.length; i++) {
     var sent = sents[i];
     if (DECISION_RE.test(sent))      addDecisions([sent], true);
-    else if (TODO_RE.test(sent))     addActions([{ text: sent, owner: '', mine: mentionsMe(sent), due: '' }], true);
+    else if (TODO_RE.test(sent))     addActions([{ text: sent, owner: who, mine: mentionsMe(sent), due: '' }], true);
     else if (ISSUE_RE.test(sent))    addIssues([sent], true);
   }
 }
@@ -1768,17 +2016,32 @@ function pushTimeline(topic, src, t) {
    the export reads as an agenda log rather than an undifferentiated pile. */
 function seg() { return CFG.segment || ''; }
 
+/* Dedupe used to re-scan the whole list per incoming item, which is quadratic:
+   8000 pasted items blocked the tab for 21 seconds. A key index makes it linear,
+   and each list is capped the way the timeline already was. */
+var ITEM_CAP = 500;
+var keyIndex = { dec: Object.create(null), iss: Object.create(null), act: Object.create(null), gloss: Object.create(null) };
+function reindexItems() {
+  keyIndex = { dec: Object.create(null), iss: Object.create(null), act: Object.create(null), gloss: Object.create(null) };
+  MEET.decisions.forEach(function (x) { keyIndex.dec[normKey(x.text)] = 1; });
+  MEET.issues.forEach(function (x) { keyIndex.iss[normKey(x.text)] = 1; });
+  MEET.actions.forEach(function (x) { keyIndex.act[normKey(x.text)] = 1; });
+  MEET.glossary.forEach(function (x) { keyIndex.gloss[normKey(x.term)] = 1; });
+}
+function capList(list) { while (list.length > ITEM_CAP) list.shift(); }
+
 function addIssues(arr, auto) {
-  if (!arr || !arr.length) return 0;
+  if (!Array.isArray(arr) || !arr.length) return 0;
   var added = 0;
   arr.forEach(function (d) {
     var text = typeof d === 'string' ? d : (d && d.text);
     if (!text) return;
     var k = normKey(text);
-    if (!k || MEET.issues.some(function (x) { return normKey(x.text) === k; })) return;
+    if (!k || keyIndex.iss[k]) return;
+    keyIndex.iss[k] = 1;
     MEET.issues.push({ text: text, t: now(), segment: seg(), auto: !!auto }); added++;
   });
-  if (added) saveMeeting();
+  if (added) { capList(MEET.issues); saveMeeting(); }
   return added;
 }
 
@@ -1790,27 +2053,29 @@ function removeItem(kind, idx) {
 }
 
 function addDecisions(arr, auto) {
-  if (!arr || !arr.length) return 0;
+  if (!Array.isArray(arr) || !arr.length) return 0;
   var added = 0;
   arr.forEach(function (d) {
     var text = typeof d === 'string' ? d : (d && d.text);
     if (!text) return;
     var k = normKey(text);
-    if (!k || MEET.decisions.some(function (x) { return normKey(x.text) === k; })) return;
+    if (!k || keyIndex.dec[k]) return;
+    keyIndex.dec[k] = 1;
     MEET.decisions.push({ text: text, t: now(), segment: seg(), auto: !!auto }); added++;
   });
-  if (added) saveMeeting();
+  if (added) { capList(MEET.decisions); saveMeeting(); }
   return added;
 }
 function addActions(arr, auto) {
-  if (!arr || !arr.length) return 0;
+  if (!Array.isArray(arr) || !arr.length) return 0;
   var added = 0;
   arr.forEach(function (a) {
     if (!a) return;
     var text = typeof a === 'string' ? a : a.text;
     if (!text) return;
     var k = normKey(text);
-    if (MEET.actions.some(function (x) { return normKey(x.text) === k; })) return;
+    if (!k || keyIndex.act[k]) return;
+    keyIndex.act[k] = 1;
     MEET.actions.push({
       text: text,
       owner: (a && a.owner) || '',
@@ -1820,20 +2085,21 @@ function addActions(arr, auto) {
     });
     added++;
   });
-  if (added) saveMeeting();
+  if (added) { capList(MEET.actions); saveMeeting(); }
   return added;
 }
 function addGlossary(arr) {
-  if (!arr || !arr.length) return 0;
+  if (!Array.isArray(arr) || !arr.length) return 0;
   var added = 0;
   arr.forEach(function (g) {
     if (!g || !g.term) return;
     var k = normKey(g.term);
-    if (MEET.glossary.some(function (x) { return normKey(x.term) === k; })) return;
+    if (!k || keyIndex.gloss[k]) return;
+    keyIndex.gloss[k] = 1;
     MEET.glossary.push({ term: g.term, definition: g.definition || '', t: now() });
     added++;
   });
-  if (added) saveMeeting();
+  if (added) { capList(MEET.glossary); saveMeeting(); }
   return added;
 }
 
@@ -1854,6 +2120,158 @@ function recomputeLocal() {
     VIEW.topicAt = MEET.frags.length ? MEET.frags[MEET.frags.length - 1].t : now();
   }
 }
+
+/* ================================================== 7g. VOICE MATCHING
+   Cheap acoustic speaker matching with no model download, so it still works
+   when the CDN is blocked and when audio must not leave the machine.
+
+   Per ~50ms frame while someone is speaking we take:
+     - fundamental frequency (autocorrelation) — by far the most discriminative
+       single cue between two people
+     - spectral centroid and rolloff — brightness / where the energy sits
+     - eight log-spaced band energies — coarse timbre
+   Frames are averaged over an utterance into a 12-dim print, z-scored against
+   the enrolled set, and matched by cosine similarity.
+
+   This is approximate and the UI says so. It is not diarization: it cannot
+   split two people talking over each other, and similar voices will confuse
+   it. It exists to save you tagging every single turn by hand, not to be
+   evidence of who said what. */
+
+var VoiceID = (function () {
+  var ctx = null, analyser = null, srcNode = null, timeBuf = null, freqBuf = null;
+  var poll = null, frames = [], enrolling = null, running = false;
+
+  var NBANDS = 8;
+  function featureFrame() {
+    analyser.getFloatTimeDomainData(timeBuf);
+    /* silence gate — never learn from a frame nobody spoke in */
+    var rms = 0;
+    for (var i = 0; i < timeBuf.length; i += 2) rms += timeBuf[i] * timeBuf[i];
+    rms = Math.sqrt(rms / (timeBuf.length / 2));
+    if (rms < 0.012) return null;
+
+    /* --- F0 by autocorrelation over a plausible speech range (70-330Hz) --- */
+    var sr = ctx.sampleRate;
+    var minLag = Math.floor(sr / 330), maxLag = Math.floor(sr / 70);
+    var best = -1, bestLag = 0;
+    for (var lag = minLag; lag <= maxLag; lag++) {
+      var sum = 0;
+      for (var j = 0; j + lag < timeBuf.length; j += 2) sum += timeBuf[j] * timeBuf[j + lag];
+      if (sum > best) { best = sum; bestLag = lag; }
+    }
+    var f0 = bestLag ? sr / bestLag : 0;
+    if (f0 < 60 || f0 > 400) f0 = 0;                 // unvoiced / nonsense
+
+    /* --- spectral shape --- */
+    analyser.getFloatFrequencyData(freqBuf);         // dB
+    var n = freqBuf.length, total = 0, weighted = 0, mags = new Float32Array(n);
+    for (var k = 0; k < n; k++) {
+      var m = Math.pow(10, freqBuf[k] / 20);
+      mags[k] = m; total += m; weighted += m * k;
+    }
+    if (total <= 0) return null;
+    var centroid = weighted / total / n;
+    var acc = 0, rolloff = 0;
+    for (var r = 0; r < n; r++) { acc += mags[r]; if (acc >= total * 0.85) { rolloff = r / n; break; } }
+
+    var bands = new Array(NBANDS), edge = 0;
+    for (var bI = 0; bI < NBANDS; bI++) {
+      var next = Math.floor(Math.pow(n, (bI + 1) / NBANDS));
+      var e = 0;
+      for (var q = edge; q < next && q < n; q++) e += mags[q];
+      bands[bI] = Math.log(1 + e / Math.max(1, next - edge));
+      edge = next;
+    }
+    return { f0: f0, centroid: centroid, rolloff: rolloff, bands: bands };
+  }
+
+  function toVector(list) {
+    var voiced = list.filter(function (f) { return f.f0 > 0; });
+    if (list.length < 6) return null;
+    var f0s = voiced.map(function (f) { return f.f0; });
+    var mean = function (a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : 0; };
+    var f0m = mean(f0s);
+    var f0sd = f0s.length > 1 ? Math.sqrt(mean(f0s.map(function (x) { return (x - f0m) * (x - f0m); }))) : 0;
+    var v = [f0m / 200, f0sd / 60, mean(list.map(function (f) { return f.centroid; })) * 6,
+             mean(list.map(function (f) { return f.rolloff; })) * 6];
+    for (var b = 0; b < NBANDS; b++) v.push(mean(list.map(function (f) { return f.bands[b]; })));
+    return v;
+  }
+
+  function cos(a, b) {
+    var d = 0, na = 0, nb = 0;
+    for (var i = 0; i < a.length && i < b.length; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    if (!na || !nb) return 0;
+    return d / (Math.sqrt(na) * Math.sqrt(nb));
+  }
+
+  /* Best match, but only if it is both good enough and clearly ahead of the
+     runner-up. An ambiguous guess is worse than no guess. */
+  function identify(vec) {
+    var scored = CFG.roster.filter(function (r) { return r.enrolled && r.print; })
+      .map(function (r) { return { id: r.id, s: cos(vec, r.print) }; })
+      .sort(function (a, b) { return b.s - a.s; });
+    if (!scored.length) return null;
+    var top = scored[0], second = scored[1];
+    if (top.s < 0.86) return null;
+    if (second && (top.s - second.s) < 0.035) return null;
+    return top.id;
+  }
+
+  return {
+    attach: function (stream) {
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        srcNode = ctx.createMediaStreamSource(stream);
+        analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.2;
+        srcNode.connect(analyser);                  // analyser only: never routed to output
+        timeBuf = new Float32Array(analyser.fftSize);
+        freqBuf = new Float32Array(analyser.frequencyBinCount);
+        running = true;
+        poll = setInterval(function () {
+          if (!running) return;
+          var f = featureFrame();
+          if (!f) return;
+          if (enrolling) { enrolling.frames.push(f); return; }
+          frames.push(f);
+          if (frames.length > 120) frames.shift();
+        }, 50);
+        return true;
+      } catch (e) { return false; }
+    },
+    detach: function () {
+      running = false; clearInterval(poll); poll = null; frames = []; enrolling = null;
+      try { if (srcNode) srcNode.disconnect(); } catch (e) {}
+      try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
+      ctx = null; analyser = null; srcNode = null;
+    },
+    active: function () { return running; },
+    /* called when a transcript fragment finalises */
+    attribute: function () {
+      if (!running || !CFG.autoSpeaker) return null;
+      if (now() - speakerLockedAt < 20000) return null;   // you just picked someone; respect it
+      var vec = toVector(frames);
+      frames = [];
+      if (!vec) return null;
+      return identify(vec);
+    },
+    startEnroll: function (id) { enrolling = { id: id, frames: [] }; },
+    finishEnroll: function () {
+      if (!enrolling) return 0;
+      var vec = toVector(enrolling.frames);
+      var n = enrolling.frames.length;
+      var r = rosterGet(enrolling.id);
+      enrolling = null;
+      if (!vec || !r || n < 20) return 0;
+      r.print = vec; r.enrolled = true; saveCfg();
+      return n;
+    },
+    enrollFrames: function () { return enrolling ? enrolling.frames.length : 0; }
+  };
+})();
 
 /* ===================================================================== 8. audio capture */
 
@@ -2109,12 +2527,22 @@ function WhisperEngine() {
 
   async function ensurePipeline() {
     if (pipe) return pipe;
+    if (CFG.sensitive && !pipe) {
+      throw captureError('On-device transcription needs a one-time download, which a sensitive meeting blocks.',
+        'Download it once outside a sensitive meeting; afterwards it is cached and works fully offline.');
+    }
     if (!CFG.allowCdn) {
       throw captureError('The Whisper engine has not been allowed to download.',
         'Settings → Capture → "Allow the one-off Whisper model download". It is ~40 MB from a public CDN, ' +
         'cached by the browser afterwards. Nothing about your audio is uploaded — only the model comes down.');
     }
-    outboundNote('transformers.js + whisper-tiny.en model', TRANSFORMERS_CDN, 'engine-download');
+    /* Honest logging: the import pulls the module from jsdelivr, and the module
+       then fetches model weights from huggingface using its own fetch, which
+       never passes through outbound(). Log every host it will touch rather than
+       showing one reassuring row. */
+    outboundNote('transformers.js module', TRANSFORMERS_CDN, 'engine-download');
+    outboundNote('whisper model weights', 'https://huggingface.co', 'engine-download');
+    outboundNote('whisper model weights (lfs)', 'https://cdn-lfs.huggingface.co', 'engine-download');
 
     sttStatus('loading engine…', 'warn');
     var mod;
@@ -2280,6 +2708,20 @@ function WhisperEngine() {
 var engine = null;
 var listening = false;
 
+/* `listening` is not set until after two awaits, so it cannot guard the start
+   itself: pressing L five times raced five microphone streams into existence,
+   left four live after Stop, and double-wrote every utterance from the orphan
+   engines. `starting` closes that window, and `startGen` lets a stop or a panic
+   that lands mid-start invalidate the start that is still in flight. */
+var starting = false;
+var startGen = 0;
+
+function abandonStart(stream, eng) {
+  try { if (eng) eng.stop(); } catch (e) {}
+  if (stream) stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+  VoiceID.detach();
+}
+
 /* Web Speech physically cannot consume a getDisplayMedia stream — it opens its own
    microphone. Rather than silently transcribing the wrong audio, the combination is
    refused with an explanation. */
@@ -2292,7 +2734,7 @@ function engineAllowed(engineName, source) {
 }
 
 async function startListening() {
-  if (listening) return;
+  if (listening || starting) return;
 
   /* One-time choice of where transcription happens. The reviewers were unanimous
      that "audio goes to Google" must be an explicit decision, not a tooltip. */
@@ -2308,29 +2750,55 @@ async function startListening() {
     return;
   }
 
+  /* A sensitive meeting must not use a cloud recogniser. The banner promises
+     nothing leaves the device; the Web Speech engine would quietly ship every
+     word to Google, which is the one channel carrying raw voice. */
+  if (CFG.sensitive && CFG.engine !== 'whisper') {
+    toast('This meeting is marked sensitive, so it can only use on-device transcription. ' +
+          'Switch the engine to on-device in Settings, or turn off Sensitive meeting.', 'err', 12000);
+    openSettings();
+    return;
+  }
+
   var why = engineAllowed(CFG.engine, CFG.source);
   if (why) { toast(why, 'err', 10000); openSettings(); return; }
 
+  starting = true;
+  var myGen = ++startGen;
   VIEW.capture = 'starting'; VIEW.captureMsg = 'requesting audio…'; renderSoon();
 
   try {
     captureStream = await acquireStream(CFG.source);
   } catch (e) {
+    starting = false;
     VIEW.capture = 'error';
     VIEW.captureMsg = e && e.name === 'NotAllowedError' ? 'permission denied' : 'capture failed';
     renderSoon();
     var msg = (e && e.message) || 'Could not start capture.';
-    if (e && e.name === 'NotAllowedError') {
-      msg = CFG.source === 'system'
+    var byName = {
+      NotAllowedError: CFG.source === 'system'
         ? 'Screen share was cancelled, so there is no audio to listen to.'
-        : 'Microphone permission was denied. Chrome cannot remember a grant for a file:// page, so it asks every time.';
-    }
+        : 'Microphone access was blocked. Click Allow when your browser asks.',
+      NotFoundError: 'No microphone was found. Plug one in, or pick a different input in your system sound settings.',
+      NotReadableError: 'The microphone is busy — another app is probably using it. Close Teams or Zoom audio settings and try again.',
+      AbortError: 'The audio device stopped responding. Try again, or reconnect it.',
+      OverconstrainedError: 'This microphone does not support the settings Recap asked for. Try a different input device.',
+      SecurityError: 'The browser blocked audio capture on this page. Opening Recap from a web address rather than a saved file usually fixes it.'
+    };
+    if (e && byName[e.name]) msg = byName[e.name];
     toast(msg + (e && e.hint ? '  ' + e.hint : ''), 'err', 13000);
     return;
   }
 
-  watchTrackEnd(captureStream, function () {
-    if (!listening) return;
+  /* A stop or an Esc that landed while we were awaiting permission must win. */
+  if (myGen !== startGen) { abandonStart(captureStream, null); captureStream = null; starting = false;
+    VIEW.capture = 'idle'; renderSoon(); return; }
+
+  /* S5: bind the handler to THIS stream. Previously an orphaned stream ending
+     tore down whatever capture happened to be live at the time. */
+  var myStream = captureStream;
+  watchTrackEnd(myStream, function () {
+    if (!listening || myStream !== captureStream) return;
     toast('The audio source ended — screen sharing was stopped, or the device disappeared.', 'err', 8000);
     stopListening();
   });
@@ -2339,24 +2807,42 @@ async function startListening() {
   try {
     await engine.start(captureStream, onFragment);
   } catch (e) {
+    starting = false;
     VIEW.capture = 'error';
     VIEW.captureMsg = 'engine failed';
     toast((e && e.message ? e.message : 'The speech engine failed to start.') +
           (e && e.hint ? '  ' + e.hint : ''), 'err', 14000);
 
-    /* Never leave the app in a broken state because a CDN was unreachable:
-       fall back to the zero-dependency engine and say so. */
-    if (CFG.engine === 'whisper' && CFG.source === 'mic') {
-      toast('Falling back to the Web Speech engine.', 'warn', 7000);
-      CFG.engine = 'webspeech'; saveCfg(); syncSettingsUI();
-      engine = WebSpeechEngine();
-      try { engine.start(captureStream, onFragment); }
-      catch (e2) { stopListening(); renderSoon(); return; }
-    } else {
-      stopListening(); renderSoon(); return;
+    /* NEVER silently downgrade across an egress boundary. Choosing on-device
+       transcription is a privacy decision; quietly switching to a cloud
+       recogniser because a CDN was blocked would break that promise without the
+       word "Google" ever appearing. Stop, and make the user choose again. */
+    if (CFG.engine === 'whisper') {
+      abandonStart(captureStream, null);
+      captureStream = null; engine = null; starting = false;
+      VIEW.capture = 'idle'; VIEW.captureMsg = '';
+      CFG.firstRunDone = false; saveCfg();
+      toast('On-device transcription could not load, so nothing was started. Choose again — the ' +
+            'alternative sends your audio to Google.', 'err', 13000);
+      renderSoon();
+      showFirstRun();
+      return;
     }
+    stopListening(); renderSoon(); return;
   }
 
+  /* Feature tap for voice matching. Analyser only — it is never routed to the
+     speakers and never leaves this function. */
+  if (CFG.source === 'mic') VoiceID.attach(captureStream);
+
+  /* Final gate: a stop or panic during engine startup wins. */
+  if (myGen !== startGen) {
+    abandonStart(captureStream, engine);
+    captureStream = null; engine = null; starting = false;
+    VIEW.capture = 'idle'; renderSoon(); return;
+  }
+
+  starting = false;
   listening = true;
   if (!MEET.startedAt) MEET.startedAt = now();
   VIEW.capture = 'live';
@@ -2365,7 +2851,10 @@ async function startListening() {
 }
 
 function stopListening() {
+  startGen++;               // invalidates any start still in flight
+  starting = false;
   listening = false;
+  VoiceID.detach();
   try { if (engine) engine.stop(); } catch (e) {}
   engine = null;
   if (captureStream) {
@@ -2384,6 +2873,10 @@ function onFragment(f) {
 
   if (f.isFinal) {
     VIEW.interim = '';
+    /* Voice matching may propose a speaker, but only when you have not just
+       chosen one by hand. Anything it decides is marked as a guess. */
+    var guess = VoiceID.attribute();
+    if (guess && guess !== currentSpeaker) { currentSpeaker = guess; fragGuess = true; renderRoster(); }
     addFragment(text, f.t || now());
     localExtract(text);        // free capture, no backend required
   } else {
@@ -2431,17 +2924,29 @@ async function outbound(url, init, purpose) {
   }
   var row = outboundNote(purpose, url, 'fetch');
   var t0 = now();
+  /* A proxy that black-holes a connection leaves fetch pending forever. Without
+     a timeout apiInFlight stayed true, the state stuck on "calling", and every
+     later tick became a no-op — summaries died silently for the whole meeting. */
+  var ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var killed = false;
+  var timer = setTimeout(function () {
+    killed = true;
+    if (ac) { try { ac.abort(); } catch (e) {} }
+  }, 30000);
+  if (ac) init = Object.assign({}, init, { signal: ac.signal });
   try {
     var res = await fetch(url, init);
+    clearTimeout(timer);
     row.ms = now() - t0;
     row.state = res.ok ? 'ok' : ('http ' + res.status);
     renderSoon();
     return res;
   } catch (e) {
+    clearTimeout(timer);
     row.ms = now() - t0;
-    row.state = 'failed';
+    row.state = killed ? 'timed out' : 'failed';
     renderSoon();
-    throw e;
+    throw killed ? new Error('request timed out after 30s') : e;
   }
 }
 
@@ -2469,7 +2974,7 @@ function applyLLMState(obj, src) {
   var t = now();
 
   if (obj.topic && String(obj.topic).trim()) {
-    var topic = String(obj.topic).trim();
+    var topic = String(obj.topic).trim().slice(0, 120);
     var changed = obj.topic_changed === true || (MEET.llmTopic && normKey(MEET.llmTopic) !== normKey(topic));
     MEET.llmTopic = topic; MEET.llmAt = t;
     VIEW.topic = topic; VIEW.topicSrc = 'claude'; VIEW.topicAt = t;
@@ -2599,6 +3104,9 @@ async function callAnthropic(system, userContent, opts) {
   }
 
   var data = await res.json();
+  /* The request was already on the wire, but nothing from it should be stored
+     once the meeting has been marked sensitive mid-flight. */
+  if (CFG.sensitive) throw new Error('sensitive meeting: response discarded');
   noteUsage(data.usage);
   VIEW.api.latency = latency;
 
@@ -2773,12 +3281,11 @@ async function catchUpHandoff() {
 
   var copied = await copyToClipboard(payload);
 
-  /* claude.ai/new?q= is an UNVERIFIED prefill parameter. It is attempted only for
-     small payloads and the flow never depends on it — the clipboard copy above and
-     the textarea below are the real mechanism. */
-  var url = CLAUDE_NEW;
-  if (payload.length < 6000) url = CLAUDE_NEW + '?q=' + encodeURIComponent(payload);
-  var opened = openClaudeTab(url);
+  /* The ?q= prefill used to carry the whole transcript in the URL, which lands
+     in browser history, the tab's session and any proxy that logs URLs. It was
+     never load-bearing — the clipboard copy and the textarea are the real
+     mechanism — so it is gone. */
+  var opened = openClaudeTab(CLAUDE_NEW);
 
   var st = $('handoffStatus');
   if (copied && opened) {
@@ -2868,6 +3375,18 @@ function parsePastedReply(text) {
 
 async function catchMeUp() {
   if (!MEET.frags.length) { toast('Nothing captured yet — start listening first.', 'warn'); return; }
+
+  /* Blocking only the claude.ai tab was not enough: the handoff still wrote the
+     whole transcript to the system clipboard, which clipboard managers, RDP
+     redirection and the next paste all see. The payload must never be built. */
+  if (CFG.sensitive) {
+    toast('Catch-me-up is off for a meeting marked sensitive — it would copy the transcript ' +
+          'off this app. Use the on-screen summary instead.', 'err', 10000);
+    show('catchupScrim');
+    $('catchupBody').innerHTML = localCatchupHtml();
+    $('catchupMeta').textContent = 'sensitive meeting · built locally · nothing copied';
+    return;
+  }
 
   if (CFG.backend === 'local') {
     /* No network at all: assemble the answer from the local layer. */
@@ -3007,10 +3526,17 @@ var renderPending = false;
 function renderSoon() {
   if (renderPending) return;
   renderPending = true;
-  requestAnimationFrame(function () { renderPending = false; render(); });
+  /* If rAF throws, the flag must not latch — otherwise nothing schedules a
+     render again for the rest of the session. */
+  try {
+    requestAnimationFrame(function () { renderPending = false; render(); });
+  } catch (e) {
+    renderPending = false;
+  }
 }
 
 function render() {
+  syncSettingsInert();      // single source of truth: the settingsOpen class
   renderStatusBar();
   renderNow();
   renderAlert();
@@ -3133,11 +3659,81 @@ function renderAlert() {
 function highlightNames(s) {
   var out = esc(s);
   var re = buildNameRegex();
-  if (re) {
-    var g = new RegExp(re.source, 'gi');
-    out = out.replace(g, function (m) { return '<em>' + m + '</em>'; });
+  if (!re) return out;
+  var g = new RegExp(re.source, 'gi');
+  /* Highlight only OUTSIDE entities. Escaping first then replacing meant a name
+     like "lt" or "quot" matched inside &lt; / &quot; and corrupted the text the
+     reader sees. Not an injection — entities cannot re-form a tag — but the
+     transcript was silently misrepresented. */
+  return out.replace(/&[a-z#0-9]+;|[^&]+/gi, function (tok) {
+    return tok.charAt(0) === '&' ? tok : tok.replace(g, function (m) { return '<em>' + m + '</em>'; });
+  });
+}
+
+function renderRoster() {
+  var bar = $('rosterbar'), add = $('btnRosterAdd');
+  Array.prototype.slice.call(bar.querySelectorAll('.spk')).forEach(function (n) { n.remove(); });
+  $('rosterEmpty').classList.toggle('hidden', CFG.roster.length > 0);
+  CFG.roster.forEach(function (r, i) {
+    var b = document.createElement('button');
+    b.className = 'spk' + (r.id === currentSpeaker ? ' on' : '') + (r.enrolled ? ' hasVoice' : '');
+    if (r.id === currentSpeaker) { b.style.background = speakerColor(r.id); b.style.borderColor = speakerColor(r.id); }
+    b.title = r.enrolled ? 'Voice learned — press ' + (i + 1) : 'Press ' + (i + 1) + ' while they speak';
+    b.innerHTML = '<span class="vdot"></span>' + esc(r.name) +
+                  (i < 9 ? '<span class="num">' + (i + 1) + '</span>' : '');
+    b.addEventListener('click', function () { setSpeaker(r.id); });
+    bar.insertBefore(b, add);
+  });
+
+  var list = $('rosterList');
+  if (list) {
+    list.innerHTML = CFG.roster.length ? '' : '<div class="hint">Nobody added yet.</div>';
+    CFG.roster.forEach(function (r) {
+      var row = document.createElement('div');
+      row.className = 'rosterRow';
+      row.innerHTML = '<span class="nm" style="color:' + speakerColor(r.id) + '">' + esc(r.name) + '</span>' +
+        '<span class="st' + (r.enrolled ? ' ok' : '') + '">' + (r.enrolled ? 'voice learned' : 'no voice sample') + '</span>';
+      var en = document.createElement('button');
+      en.className = 'btn sm'; en.textContent = r.enrolled ? 'Redo' : 'Learn voice';
+      en.addEventListener('click', function () { openEnroll(r.id); });
+      var rm = document.createElement('button');
+      rm.className = 'btn sm'; rm.textContent = 'Remove';
+      rm.addEventListener('click', function () { rosterRemove(r.id); });
+      row.appendChild(en); row.appendChild(rm);
+      list.appendChild(row);
+    });
   }
-  return out;
+}
+
+/* Enrolment needs live audio, so it only works while listening. */
+function openEnroll(id) {
+  var r = rosterGet(id); if (!r) return;
+  if (!listening || !VoiceID.active()) {
+    toast('Start listening first — learning a voice needs live microphone audio.', 'warn', 8000);
+    return;
+  }
+  $('enrollWho').innerHTML = 'Recording a voice sample for <b>' + esc(r.name) + '</b>.';
+  $('enrollFill').style.width = '0%';
+  $('enrollCount').textContent = 'Waiting for speech…';
+  show('enrollScrim');
+  VoiceID.startEnroll(id);
+  clearInterval(openEnroll._t);
+  openEnroll._t = setInterval(function () {
+    var n = VoiceID.enrollFrames();
+    var pct = Math.min(100, Math.round(n / 160 * 100));      // ~8s of voiced frames
+    $('enrollFill').style.width = pct + '%';
+    $('enrollCount').textContent = n < 20 ? 'Waiting for speech…'
+      : (pct >= 100 ? 'Plenty — press Save voice.' : 'Listening… ' + pct + '%');
+  }, 200);
+}
+function closeEnroll(save) {
+  clearInterval(openEnroll._t);
+  if (save) {
+    var n = VoiceID.finishEnroll();
+    if (n) { toast('Voice sample saved.', 'ok'); CFG.autoSpeaker = true; saveCfg(); }
+    else toast('Not enough clear speech to learn that voice. Try again in a quieter moment.', 'err', 8000);
+  } else { VoiceID.finishEnroll(); }
+  hide('enrollScrim'); syncSettingsUI(); renderRoster();
 }
 
 function renderChips() {
@@ -3179,13 +3775,25 @@ function renderTail() {
   }
 
   var oldCut = now() - 15000;
+  var lastSpk = null;
   var html = recent.map(function (f) {
-    return '<span class="' + (f.t < oldCut ? 'old' : '') + '">' + highlightNames(f.text) + ' </span>';
+    var lbl = '';
+    /* Label only when the speaker changes — repeating a name every fragment
+       would swamp a narrow column. */
+    if (f.spk && f.spk !== lastSpk) {
+      lbl = '<span class="spkLabel' + (f.guess ? ' spkGuess' : '') + '" style="color:' + speakerColor(f.spk) + '">' +
+            esc(speakerName(f.spk)) + (f.guess ? '?' : '') + ':</span>';
+    }
+    lastSpk = f.spk || lastSpk;
+    return lbl + '<span class="' + (f.t < oldCut ? 'old' : '') + '">' + highlightNames(f.text) + ' </span>';
   }).join('');
   if (VIEW.interim) html += '<span class="interim">' + highlightNames(VIEW.interim) + '</span>';
 
+  /* Only snap to the newest text if the reader was already at the bottom.
+     Unconditional auto-scroll made reading back mid-meeting impossible. */
+  var nearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 40;
   box.innerHTML = html;
-  box.scrollTop = box.scrollHeight;
+  if (nearBottom) box.scrollTop = box.scrollHeight;
 
   $('tailStatus').textContent = VIEW.capture === 'live'
     ? (VIEW.interim ? 'hearing…' : (CFG.engine === 'whisper' ? 'block every ' + CFG.chunkSec + 's' : 'live'))
@@ -3262,7 +3870,15 @@ function renderNetLog() {
 
 /* ===================================================================== 18. modals */
 
-function show(id) { $(id).classList.remove('hidden'); }
+function show(id) {
+  $(id).classList.remove('hidden');
+  /* Move focus into the dialog; without this a screen-reader or keyboard user
+     stays outside it and Tab walks the page behind. */
+  setTimeout(function () {
+    var f = $(id).querySelector('button.primary, button, input, textarea, select');
+    if (f && f.focus) { try { f.focus(); } catch (e) {} }
+  }, 30);
+}
 function hide(id) { $(id).classList.add('hidden'); }
 
 /* In-app confirmation. A raw browser confirm() looked like an unfinished
@@ -3312,8 +3928,11 @@ function exportSettings() {
   var out = {};
   for (var k in CFG) if (k !== 'apiKey') out[k] = CFG[k];   // the key never travels
   out._app = 'recap'; out._version = APP_VERSION;
-  var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-  var url = URL.createObjectURL(blob);
+  var blob, url;
+  try {
+    blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    url = URL.createObjectURL(blob);
+  } catch (e) { toast('This browser blocked the download.', 'err'); return; }
   var a = document.createElement('a');
   a.href = url; a.download = 'recap-settings.json';
   document.body.appendChild(a); a.click();
@@ -3325,13 +3944,27 @@ function importSettings(text) {
   try { obj = JSON.parse(text); }
   catch (e) { toast('That is not valid settings JSON.', 'err'); return; }
   if (!obj || typeof obj !== 'object') { toast('That is not valid settings JSON.', 'err'); return; }
-  var n = 0;
+  /* Governance settings are never importable. A pasted config must not be able
+     to switch off a sensitive meeting, widen egress, or shorten retention. */
+  var LOCKED = { apiKey: 1, sensitive: 1, backend: 1, allowCdn: 1, retentionDays: 1, spendCapUsd: 1 };
+  var n = 0, skipped = 0;
   for (var k in DEFAULTS) {
-    if (k === 'apiKey') continue;
-    if (obj[k] !== undefined && obj[k] !== null && typeof obj[k] === typeof DEFAULTS[k]) { CFG[k] = obj[k]; n++; }
+    if (LOCKED[k]) { if (obj[k] !== undefined) skipped++; continue; }
+    var v = obj[k];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== typeof DEFAULTS[k]) continue;
+    if (Array.isArray(DEFAULTS[k]) !== Array.isArray(v)) continue;   // {} where [] belongs bricked the app
+    if (typeof v === 'number') {
+      if (!isFinite(v)) continue;
+      v = clampSetting(k, v);                                        // -1 alertTtl silently killed every alert
+    }
+    if (k === 'roster') v = sanitizeRoster(v);
+    if (k === 'names') v = String(v).slice(0, 500);
+    CFG[k] = v; n++;
   }
   saveCfg(); syncSettingsUI(); buildNameRegex(); renderSoon();
-  toast(n + ' settings applied. Your API key was left untouched.', 'ok');
+  toast(n + ' settings applied.' + (skipped ? ' ' + skipped + ' security setting' + (skipped > 1 ? 's were' : ' was') +
+        ' ignored — sensitivity, backend, retention and spend cap can only be changed here.' : ''), 'ok', 9000);
 }
 
 /* ===================================================================== 19. export */
@@ -3365,7 +3998,8 @@ function exportMarkdown() {
 
   L.push('## Decisions');
   L.push(MEET.decisions.length
-    ? MEET.decisions.map(function (d) { return '- ' + d.text + ' _(' + hhmm(d.t) + ')_'; }).join('\n')
+    ? MEET.decisions.map(function (d) {
+        return '- ' + d.text + ' _(' + hhmm(d.t) + ')_' + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
     : '_none recorded_');
   L.push('');
 
@@ -3388,7 +4022,9 @@ function exportMarkdown() {
     }
     if (other.length) {
       L.push('### Others');
-      L.push(other.map(function (a) { return '- ' + (a.owner ? '**' + a.owner + '** — ' : '') + a.text; }).join('\n'));
+      L.push(other.map(function (a) {
+        return '- ' + (a.owner ? '**' + a.owner + '** — ' : '') + a.text +
+               (a.due ? ' — due ' + a.due : '') + (a.auto ? ' _(auto-detected)_' : ''); }).join('\n'));
     }
   } else L.push('_none recorded_');
   L.push('');
@@ -3405,13 +4041,24 @@ function exportMarkdown() {
 
   L.push('## Transcript');
   L.push('');
-  L.push('> Machine transcription. Expect misheard words and no speaker labels.');
+  L.push('> Machine transcription — expect misheard words. Names come from whoever was selected as');
+  L.push('> speaking; a name followed by **?** was guessed by voice matching and is not reliable.');
   L.push('');
-  L.push(MEET.frags.map(function (f) { return '**' + hhmm(f.t) + '** ' + f.text; }).join('\n\n') || '_empty_');
+  L.push(MEET.frags.map(function (f) {
+    var who = f.spk ? (speakerName(f.spk) + (f.guess ? '?' : '')) : '';
+    return '**' + hhmm(f.t) + '**' + (who ? ' **' + who + ':**' : '') + ' ' + f.text;
+  }).join('\n\n') || '_empty_');
   L.push('');
 
-  var blob = new Blob([L.join('\n')], { type: 'text/markdown;charset=utf-8' });
-  var url = URL.createObjectURL(blob);
+  var blob, url;
+  try {
+    blob = new Blob([L.join('\n')], { type: 'text/markdown;charset=utf-8' });
+    url = URL.createObjectURL(blob);
+  } catch (e) {
+    toast('This browser blocked the download. Your notes are safe — copy them from the catch-up view instead.',
+          'err', 9000);
+    return;
+  }
   var d = new Date(started), p = function (n) { return (n < 10 ? '0' : '') + n; };
   var name = 'spacecadet-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
              '-' + p(d.getHours()) + p(d.getMinutes()) + '.md';
@@ -3467,17 +4114,27 @@ function setDiscreet(on) {
 
 var panicked = false, panicStoppedCapture = false, titleBefore = document.title;
 
-/* Esc STOPS CAPTURE. It does not merely hide the window.
-   The original build only toggled a CSS class, so the microphone stayed live
-   behind a fake blank document — a feature whose whole function was to make it
-   look like nothing was being recorded while it was. Three separate reviewers
-   independently called that indefensible, and they were right. Esc now halts
-   capture first and hides second, and coming back never silently resumes:
-   restarting is always a deliberate act with the recording indicator visible. */
+/* PANIC HIDE. Esc blanks the screen instantly, every time — that is the whole
+   point of the feature and it is never gated or delayed.
+
+   What is configurable is whether hiding ALSO stops the microphone
+   (CFG.panicStopsCapture, default off). Off keeps the transcript running while
+   the screen is hidden, which is what the feature is for: you hide it, someone
+   talks for two minutes, you unhide and have not lost the thread. On means the
+   mic cuts too, which some organisations will want because a screen showing a
+   blank document while audio is still being captured is a hard thing to explain
+   after the fact. The owner of the laptop decides; the app just does it. */
 function togglePanic() {
   panicked = !panicked;
   if (panicked) {
-    if (listening) { stopListening(); panicStoppedCapture = true; }
+    if (CFG.panicStopsCapture && (listening || starting)) { stopListening(); panicStoppedCapture = true; }
+    /* Paint-over is not enough: scrims and the settings drawer live outside
+       #app, so a confirm dialog stayed focused and Enter could fire it behind
+       the fake document. Everything is dismissed and focus dropped. */
+    Array.prototype.forEach.call(document.querySelectorAll('.scrim'), function (n) { n.classList.add('hidden'); });
+    confirmCb = null;
+    closeSettings();
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
     titleBefore = document.title;
     document.title = 'Document1';
   } else {
@@ -3493,8 +4150,17 @@ function togglePanic() {
 
 /* ===================================================================== 22. settings UI */
 
-function openSettings() { document.body.classList.add('settingsOpen'); }
-function closeSettings() { document.body.classList.remove('settingsOpen'); }
+/* A drawer moved off-screen with transform is still in the tab order: tabbing
+   from the page walked into ~20 invisible controls. `inert` removes it. */
+function syncSettingsInert() {
+  var el = $('settings');
+  if (!el || !el.setAttribute) return;
+  var open = document.body.classList.contains('settingsOpen');
+  if (open === !el.hasAttribute('inert')) return;         // already correct
+  if (open) el.removeAttribute('inert'); else el.setAttribute('inert', '');
+}
+function openSettings() { document.body.classList.add('settingsOpen'); syncSettingsInert(); }
+function closeSettings() { document.body.classList.remove('settingsOpen'); syncSettingsInert(); }
 
 function syncSettingsUI() {
   $('setBackend').value = CFG.backend;
@@ -3505,12 +4171,14 @@ function syncSettingsUI() {
   $('setEngine').value = CFG.engine;
   $('setAllowCdn').checked = !!CFG.allowCdn;
   $('setSensitive').checked = !!CFG.sensitive;
+  $('setAutoSpeaker').checked = !!CFG.autoSpeaker;
   $('setRetention').value = CFG.retentionDays; $('setRetentionVal').textContent = CFG.retentionDays;
   $('setSpendCap').value = CFG.spendCapUsd; $('setSpendCapVal').textContent = CFG.spendCapUsd;
   $('setChunk').value = CFG.chunkSec; $('setChunkVal').textContent = CFG.chunkSec;
   $('setNames').value = CFG.names;
   $('setQPatterns').checked = !!CFG.qPatterns;
   $('setChime').checked = !!CFG.chime;
+  $('setPanicStop').checked = !!CFG.panicStopsCapture;
   $('setAlertTtl').value = CFG.alertTtlSec; $('setAlertTtlVal').textContent = CFG.alertTtlSec;
   $('setWindow').value = CFG.windowMin; $('setWindowVal').textContent = CFG.windowMin;
   $('setTopicTh').value = CFG.topicTh; $('setTopicThVal').textContent = Number(CFG.topicTh).toFixed(2);
@@ -3527,11 +4195,14 @@ function syncSettingsUI() {
   $('backendHint').innerHTML = {
     handoff: 'Free. “Catch me up” copies a prompt and opens claude.ai — <b>your Pro subscription pays</b>. ' +
              'This page makes no API call. The live dashboard runs entirely on the local layer.',
-    api:     'Costs money. Adds the ambient auto-summary every ' + CFG.intervalSec + 's. Everything else works ' +
+    api:     'Costs money. Adds the ambient auto-summary every ' + esc(CFG.intervalSec) + 's. Everything else works ' +
              'the same without it.',
-    local:   'Nothing leaves the machine — the outbound choke point is hard-disabled and every blocked ' +
-             'attempt is logged. The single exception is the one-off Whisper engine download, which stays ' +
-             'blocked unless you tick its box below.' +
+    local:   'No summaries are sent anywhere — the outbound choke point is hard-disabled and every ' +
+             'blocked attempt is logged. Two things are still not covered by it: the one-off on-device ' +
+             'model download (blocked unless you allow it below, and it also pulls model files from ' +
+             'huggingface.co), and the Web Speech engine, which streams audio to Google outside this ' +
+             'app\'s control. For a genuine nothing-leaves-the-device setup use on-device transcription ' +
+             'and tick Sensitive meeting.' +
              (CFG.engine === 'webspeech'
                ? ' <b>But the Web Speech engine still streams your audio to Google.</b> Switch the STT engine ' +
                  'to local Whisper for genuine on-device operation.'
@@ -3591,6 +4262,12 @@ function bindSettings() {
     if (listening) toast('Restart listening for the new engine to take effect.', 'warn');
   });
   on('setAllowCdn', 'change', function () { CFG.allowCdn = this.checked; saveCfg(); });
+  on('setAutoSpeaker', 'change', function () {
+    CFG.autoSpeaker = this.checked; saveCfg();
+    if (this.checked && !CFG.roster.some(function (r) { return r.enrolled; })) {
+      toast('Nobody has a voice sample yet — use "Learn voice" beside each name while listening.', 'warn', 9000);
+    }
+  });
   on('setSensitive', 'change', function () {
     CFG.sensitive = this.checked; saveCfg(); syncSettingsUI(); renderSoon();
     if (this.checked) toast('Sensitive meeting on. Export and every outbound path are now blocked.', 'ok', 7000);
@@ -3605,6 +4282,7 @@ function bindSettings() {
     CFG.chunkSec = +this.value; $('setChunkVal').textContent = CFG.chunkSec; saveCfg(); });
   on('setNames', 'input', function () { CFG.names = this.value; saveCfg(); buildNameRegex(); renderSoon(); });
   on('setQPatterns', 'change', function () { CFG.qPatterns = this.checked; saveCfg(); });
+  on('setPanicStop', 'change', function () { CFG.panicStopsCapture = this.checked; saveCfg(); });
   on('setChime', 'change', function () { CFG.chime = this.checked; saveCfg(); if (this.checked) chime('hard'); });
   on('setAlertTtl', 'input', function () {
     CFG.alertTtlSec = +this.value; $('setAlertTtlVal').textContent = CFG.alertTtlSec; saveCfg(); });
@@ -3651,7 +4329,7 @@ function bindUI() {
   $('btnStop').addEventListener('click', stopListening);
   $('btnCatchup').addEventListener('click', catchMeUp);
   $('btnSettings').addEventListener('click', function () {
-    document.body.classList.toggle('settingsOpen');
+    document.body.classList.toggle('settingsOpen'); syncSettingsInert();
   });
   $('btnExport').addEventListener('click', exportMarkdown);
   $('btnDiscreet').addEventListener('click', function () { setDiscreet(!CFG.discreet); });
@@ -3700,15 +4378,34 @@ function bindUI() {
     removeItem(b.getAttribute('data-rm'), parseInt(b.getAttribute('data-i'), 10));
   });
 
+  /* roster */
+  function promptAdd() {
+    var el = $('setRosterAdd');
+    document.body.classList.add('settingsOpen');
+    el.focus();
+  }
+  $('btnRosterAdd').addEventListener('click', promptAdd);
+  $('btnRosterAdd2').addEventListener('click', function () {
+    var el = $('setRosterAdd');
+    if (rosterAdd(el.value)) { el.value = ''; syncSettingsUI(); }
+  });
+  $('setRosterAdd').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); if (rosterAdd(this.value)) { this.value = ''; syncSettingsUI(); } }
+  });
+  $('enrollDone').addEventListener('click', function () { closeEnroll(true); });
+  $('enrollScrim').addEventListener('click', function (e) { if (e.target === this) closeEnroll(false); });
+
   $('alertDismiss').addEventListener('click', dismissAlert);
   $('alertCatchup').addEventListener('click', catchMeUp);
   $('awayClose').addEventListener('click', function () { $('away').classList.add('hidden'); });
 
+  /* Any dismissal disarms a pending confirm callback — a cancelled dialog must
+     not stay armed to fire later. */
   Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function (b) {
-    b.addEventListener('click', function () { hide(b.getAttribute('data-close')); });
+    b.addEventListener('click', function () { confirmCb = null; hide(b.getAttribute('data-close')); });
   });
   Array.prototype.forEach.call(document.querySelectorAll('.scrim'), function (s) {
-    s.addEventListener('click', function (e) { if (e.target === s) s.classList.add('hidden'); });
+    s.addEventListener('click', function (e) { if (e.target === s) { confirmCb = null; s.classList.add('hidden'); } });
   });
 
   $('handoffCopy').addEventListener('click', async function () {
@@ -3721,10 +4418,30 @@ function bindUI() {
   $('handoffApply').addEventListener('click', function () {
     var parsed = parsePastedReply($('handoffReply').value);
     if (!parsed) { toast('Could not read that reply. Paste Claude\'s full answer, or its raw JSON.', 'err'); return; }
-    applyLLMState(parsed, 'claude (pasted)');
+    try {
+      applyLLMState(parsed, 'claude (pasted)');
+    } catch (e) {
+      toast('That reply was not in a shape the dashboard could use.', 'err', 7000);
+      return;
+    }
     hide('handoffScrim');
     toast('Dashboard updated from the pasted reply.', 'ok');
   });
+
+  /* Keep Tab inside an open dialog. */
+  window.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    var open = Array.prototype.filter.call(document.querySelectorAll('.scrim'), function (n) {
+      return !n.classList.contains('hidden');
+    }).pop();
+    if (!open) return;
+    var f = open.querySelectorAll('button, input, textarea, select, [href]');
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    else if (!open.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  }, true);
 
   /* --------------------------------------------------------- hotkeys */
   window.addEventListener('keydown', function (e) {
@@ -3736,10 +4453,16 @@ function bindUI() {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+    /* 1-9 select who is speaking — the fastest possible manual attribution */
+    if (/^[1-9]$/.test(e.key)) {
+      var idx = parseInt(e.key, 10) - 1;
+      if (CFG.roster[idx]) { e.preventDefault(); setSpeaker(CFG.roster[idx].id); return; }
+    }
+
     switch (e.key.toLowerCase()) {
       case 'c': e.preventDefault(); catchMeUp(); break;
       case 'l': e.preventDefault(); listening ? stopListening() : startListening(); break;
-      case 's': e.preventDefault(); document.body.classList.toggle('settingsOpen'); break;
+      case 's': e.preventDefault(); document.body.classList.toggle('settingsOpen'); syncSettingsInert(); break;
       case 'd': e.preventDefault(); dismissAlert(); break;
       case 'e': e.preventDefault(); exportMarkdown(); break;
       case 'v': e.preventDefault(); setDiscreet(!CFG.discreet); break;
@@ -3751,7 +4474,17 @@ function bindUI() {
 
 /* ===================================================================== 24. main loop */
 
+var lastRetentionCheck = 0;
 function tick() {
+  /* Retention is re-checked while the page is open, not only at load: a meeting
+     left running past midnight would otherwise never age out. */
+  if (now() - lastRetentionCheck > 300000) {
+    lastRetentionCheck = now();
+    if (MEET.startedAt && ((now() - MEET.startedAt) / 86400000) > clamp(CFG.retentionDays, 1, 90)) {
+      resetMeeting();
+      toast('This meeting passed the ' + CFG.retentionDays + '-day retention limit and was cleared.', 'warn', 9000);
+    }
+  }
   if (listening) recomputeLocal();
 
   /* Ambient summarisation is the only thing that ever costs money, and it is
@@ -3770,6 +4503,7 @@ function init() {
   syncSettingsUI();
   bindSettings();
   bindUI();
+  renderRoster();
   setDiscreet(CFG.discreet);
   buildNameRegex();
 
@@ -3790,6 +4524,7 @@ function init() {
           'needs to know what you are called.', 'warn', 11000);
   }
 
+  syncSettingsInert();
   render();
   setInterval(tick, 500);
 }
