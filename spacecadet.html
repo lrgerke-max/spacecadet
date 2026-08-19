@@ -1,0 +1,3215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spacecadet</title>
+<!--
+  SPACECADET — meeting attention assistant. Single file, no build step, runs from file://.
+
+  PIPELINE
+    audio capture -> speech-to-text (in-browser) -> rolling timestamped buffer
+      -> [fast loop]  local regex/keyword intelligence  (free, instant, always on)
+      -> [slow loop]  optional Claude summary          (api key OR clipboard handoff)
+      -> dashboard
+
+  Claude cannot accept audio. The Messages API is text/image/PDF only, so speech-to-text
+  happens in the browser and only text is ever sent anywhere.
+
+  PLATFORM NOTES
+    * Built and tuned for Chrome/Edge on WINDOWS, opened from file://.
+    * System-audio capture is Windows-only. Chrome on macOS cannot capture system audio
+      at all -- getDisplayMedia there offers tab audio only, never the desktop mixdown.
+      On Windows you must share the ENTIRE SCREEN and tick "Also share system audio";
+      a window share carries no audio track on any platform.
+    * Workers and AudioWorklet.addModule() are blocked from a file:// (opaque "null")
+      origin in Chrome, so the Whisper engine runs on the main thread and uses
+      ScriptProcessorNode rather than AudioWorklet. See CaptureTap below.
+    * A file:// page cannot persist microphone permission, so Chrome re-prompts each
+      time the page is opened. That is a browser rule, not a bug in this app.
+
+  SECURITY
+    An API key is optional and never required. If entered it lives in localStorage on
+    this machine. A file:// page offers no meaningful secret protection -- use a
+    spend-limited personal key, never a shared or production one.
+-->
+<style>
+  /* ---------------------------------------------------------------- tokens */
+  :root{
+    --bg:#06080b; --bg2:#0c1016; --panel:#111722; --panel2:#161d2a;
+    --line:#1f2836; --line2:#2b3648;
+    --txt:#eef3fa; --dim:#93a2b6; --dim2:#63718a;
+    --cy:#49d8ff; --gr:#2fe6a8; --am:#ffb224; --rd:#ff3b47; --vi:#b78bff;
+    --now-size:clamp(34px,6.2vw,76px);
+    --tail-size:clamp(17px,1.85vw,25px);
+    --radius:10px;
+    --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+    overflow:hidden;-webkit-font-smoothing:antialiased;
+  }
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{cursor:pointer}
+  .hidden{display:none !important}
+  .mono{font-family:var(--mono)}
+
+  #app{display:flex;flex-direction:column;height:100vh}
+
+  /* ------------------------------------------------------------ status bar */
+  #statusbar{
+    flex:0 0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:6px 12px;background:#04060a;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.02em;color:var(--dim);
+  }
+  #statusbar b{color:var(--txt);font-weight:600}
+  .sbItem{display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim2);flex:0 0 auto}
+  .dot.ok{background:var(--gr);box-shadow:0 0 8px var(--gr)}
+  .dot.warn{background:var(--am);box-shadow:0 0 8px var(--am)}
+  .dot.err{background:var(--rd);box-shadow:0 0 8px var(--rd)}
+  .dot.live{animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  #sbSpacer{flex:1 1 auto}
+
+  /* --------------------------------------------------------- control strip */
+  #controls{
+    flex:0 0 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);
+  }
+  .btn{
+    background:var(--panel);border:1px solid var(--line2);color:var(--txt);
+    padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;
+    display:inline-flex;align-items:center;gap:7px;transition:.12s;
+  }
+  .btn:hover{background:var(--panel2);border-color:#3d4a5f}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn .k{font-family:var(--mono);font-size:10px;opacity:.55;border:1px solid currentColor;
+    border-radius:3px;padding:0 3px;line-height:14px}
+  .btn.primary{background:#0d3a4d;border-color:#1d6a8c;color:#c9f2ff}
+  .btn.primary:hover{background:#124b63}
+  .btn.go{background:#0d3d2a;border-color:#1c7a55;color:#c6ffe8}
+  .btn.go:hover{background:#11533a}
+  .btn.stop{background:#4a1216;border-color:#8c2b33;color:#ffd7da}
+  .btn.stop:hover{background:#5d171c}
+  .btn.sm{padding:5px 9px;font-size:12px}
+
+  /* three-way backend switch */
+  #backendSwitch{display:flex;align-items:center;gap:0;border:1px solid var(--line2);
+    border-radius:8px;overflow:hidden;background:var(--panel)}
+  #backendSwitch .seg{padding:7px 12px;font-size:12.5px;font-weight:700;letter-spacing:.03em;
+    color:var(--dim);border-right:1px solid var(--line2);background:transparent;transition:.12s}
+  #backendSwitch .seg:last-child{border-right:0}
+  #backendSwitch .seg:hover{color:var(--txt);background:var(--panel2)}
+  #backendSwitch .seg.on{background:#123244;color:#9fe8ff;text-shadow:0 0 12px rgba(73,216,255,.5)}
+  #backendSwitch .seg.on[data-b="api"]{background:#3d2a08;color:#ffce7a}
+  #backendSwitch .seg.on[data-b="local"]{background:#0f3a2a;color:#96f5cf}
+  .switchLabel{font-family:var(--mono);font-size:10.5px;color:var(--dim2);
+    text-transform:uppercase;letter-spacing:.12em;margin-right:2px}
+
+  /* ------------------------------------------------------------- away note */
+  #away{
+    flex:0 0 auto;margin:8px 12px 0;padding:9px 14px;border-radius:var(--radius);
+    background:#1a2438;border:1px solid #2f4468;color:#bcd4ff;font-size:14px;
+    display:flex;align-items:center;gap:12px;
+  }
+  #away b{color:#fff}
+  #awayClose{margin-left:auto}
+
+  /* ----------------------------------------------------------- alert zone */
+  #alertZone{
+    flex:0 0 auto;margin:10px 12px 0;padding:16px 20px;border-radius:12px;
+    background:linear-gradient(180deg,#3d0a10,#26070c);
+    border:2px solid var(--rd);box-shadow:0 0 0 1px #ff3b4733,0 10px 40px -12px #ff3b4788;
+    animation:alertIn .18s ease-out, alertGlow 2.4s ease-in-out infinite;
+  }
+  #alertZone.soft{
+    background:linear-gradient(180deg,#3a2a05,#231903);border-color:var(--am);
+    box-shadow:0 0 0 1px #ffb22433,0 10px 40px -12px #ffb22466;animation:alertIn .18s ease-out;
+  }
+  @keyframes alertIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+  @keyframes alertGlow{0%,100%{box-shadow:0 0 0 1px #ff3b4733,0 10px 40px -12px #ff3b4788}
+    50%{box-shadow:0 0 0 1px #ff3b4755,0 10px 54px -10px #ff3b47cc}}
+  #alertHead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  #alertKind{font-size:clamp(20px,2.6vw,32px);font-weight:800;letter-spacing:.01em;color:#fff}
+  #alertZone.soft #alertKind{color:#ffe2ac}
+  #alertAgo{font-family:var(--mono);font-size:13px;color:#ffb9bd}
+  #alertZone.soft #alertAgo{color:#ffd79a}
+  #alertQ{margin-top:8px;font-size:clamp(16px,1.9vw,23px);line-height:1.4;color:#ffe9ea}
+  #alertQ em{color:#fff;font-style:normal;background:#ff3b4733;border-radius:4px;padding:0 4px}
+  #alertPoints{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  #alertPoints li{
+    font-size:clamp(14px,1.5vw,18px);line-height:1.35;color:#fff;padding:8px 12px;
+    background:#ffffff12;border-left:3px solid #fff8;border-radius:0 7px 7px 0;
+  }
+  #alertBar{display:flex;gap:8px;margin-top:12px;align-items:center}
+
+  /* -------------------------------------------------------------- now zone */
+  #nowZone{flex:0 0 auto;padding:18px 20px 14px;margin:10px 12px 0;border-radius:12px;
+    background:var(--panel);border:1px solid var(--line);position:relative;overflow:hidden}
+  #nowZone.changed{animation:topicFlash 2.6s ease-out}
+  @keyframes topicFlash{
+    0%{background:#0f4a5e;border-color:var(--cy);box-shadow:0 0 60px -8px #49d8ff}
+    35%{background:#0b3140;border-color:#2a7f9c}
+    100%{background:var(--panel);border-color:var(--line);box-shadow:none}
+  }
+  .zoneLabel{
+    font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--dim2);
+    text-transform:uppercase;display:flex;align-items:center;gap:10px;
+  }
+  #topicChangedTag{
+    color:#04212b;background:var(--cy);border-radius:4px;padding:1px 7px;font-weight:800;
+    letter-spacing:.1em;animation:tagBlink 1s steps(2) 5;
+  }
+  @keyframes tagBlink{50%{opacity:.25}}
+  #topic{
+    margin:6px 0 0;font-size:var(--now-size);line-height:1.03;font-weight:800;
+    letter-spacing:-.02em;color:#fff;overflow-wrap:anywhere;
+  }
+  #topic.idle{color:var(--dim2);font-weight:700}
+  #topicMeta{margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--dim2)}
+  .srcTag{border:1px solid var(--line2);border-radius:4px;padding:0 5px;color:var(--dim);
+    font-size:10px;letter-spacing:.1em}
+  .srcTag.claude{border-color:#6b4bb8;color:#c9b0ff}
+  .srcTag.local{border-color:#2a6d5a;color:#8fe8c8}
+
+  /* ---------------------------------------------------------- context zone */
+  #contextZone{
+    flex:1 1 auto;min-height:0;display:grid;gap:12px;padding:12px;
+    grid-template-columns:minmax(0,1.35fr) minmax(280px,.85fr);
+  }
+  @media (max-width:900px){#contextZone{grid-template-columns:1fr;overflow:auto}}
+  .col{min-height:0;display:flex;flex-direction:column;gap:12px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card.grow{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+
+  #chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;min-height:30px}
+  .chip{
+    background:#132a38;border:1px solid #23566e;color:#a9e9ff;border-radius:999px;
+    padding:5px 12px;font-size:clamp(13px,1.4vw,17px);font-weight:650;white-space:nowrap;
+  }
+  .chip.hot{background:#1c3f52;border-color:#3d8fb3;color:#d5f5ff}
+  .chip .n{opacity:.5;font-size:.8em;margin-left:5px;font-family:var(--mono)}
+  .chipEmpty{color:var(--dim2);font-size:13px;font-style:italic}
+
+  #bullets{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  #bullets li{
+    font-size:clamp(14px,1.45vw,18px);line-height:1.4;padding-left:16px;position:relative;color:#dde7f3;
+  }
+  #bullets li:before{content:"";position:absolute;left:0;top:.55em;width:6px;height:6px;
+    border-radius:50%;background:var(--cy)}
+  #bullets li:first-child{color:#fff}
+
+  #tailCard{position:relative}
+  #tail{
+    flex:1 1 auto;min-height:0;overflow:auto;margin-top:10px;font-size:var(--tail-size);
+    line-height:1.55;color:#e4ecf6;letter-spacing:.002em;scroll-behavior:smooth;
+  }
+  #tail .interim{color:var(--dim);font-style:italic}
+  #tail .hit{background:#ff3b4733;border-bottom:2px solid var(--rd);border-radius:3px;color:#fff}
+  #tail .old{color:#93a2b6}
+  #tailEmpty{color:var(--dim2);font-style:italic;font-size:16px}
+
+  .panel{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;flex:0 0 auto}
+  .panel>summary{
+    list-style:none;cursor:pointer;padding:10px 13px;display:flex;align-items:center;gap:9px;
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+    background:var(--panel2);user-select:none;
+  }
+  .panel>summary::-webkit-details-marker{display:none}
+  .panel>summary:hover{color:var(--txt)}
+  .panel>summary .count{
+    margin-left:auto;background:#20293a;color:var(--txt);border-radius:999px;padding:1px 8px;font-size:11px;
+  }
+  .panel>summary .count.zero{opacity:.35}
+  .panel .body{padding:10px 13px 13px;font-size:14px;line-height:1.45}
+  .panel .body ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .panel .body li{padding-left:14px;position:relative;color:#d5dfec}
+  .panel .body li:before{content:"–";position:absolute;left:0;color:var(--dim2)}
+  .panel .body .none{color:var(--dim2);font-style:italic}
+  li.mine{background:#3a2a05;border-left:3px solid var(--am);border-radius:0 6px 6px 0;
+    padding:7px 10px 7px 12px;color:#ffe6b8}
+  li.mine:before{content:"★";color:var(--am);left:-14px;display:none}
+  li.mine .who{font-family:var(--mono);font-size:11px;color:#ffce7a;letter-spacing:.08em}
+  li .who{font-family:var(--mono);font-size:11px;color:var(--dim2);margin-left:6px}
+  .tlRow{display:flex;gap:10px;align-items:baseline}
+  .tlRow .tm{font-family:var(--mono);font-size:11.5px;color:var(--dim2);flex:0 0 auto}
+  .glossTerm{color:var(--vi);font-weight:700}
+
+  /* ------------------------------------------------------------- discreet */
+  body.discreet{--now-size:clamp(20px,2.4vw,30px);--tail-size:15px}
+  body.discreet #nowZone{background:#0a0d12;border-color:#161c26;padding:10px 14px;margin-top:6px}
+  body.discreet #topic{font-weight:600;color:#c3cedd}
+  body.discreet #alertZone{background:#241014;border-width:1px;box-shadow:none;animation:none;padding:10px 14px}
+  body.discreet #alertKind{font-size:16px}
+  body.discreet #alertQ{font-size:14px}
+  body.discreet .chip{font-size:12px;padding:3px 9px;background:#111823;border-color:#212c3b;color:#93a2b6}
+  body.discreet #controls,body.discreet #statusbar{filter:saturate(.35)}
+  body.discreet #bullets li{font-size:14px}
+
+  /* ---------------------------------------------------------- panic screen */
+  #panic{
+    position:fixed;inset:0;z-index:9999;background:#fff;color:#222;display:none;
+    font-family:Calibri,Carlito,"Segoe UI",sans-serif;
+  }
+  body.panic #panic{display:block}
+  body.panic #app{visibility:hidden}
+  #panicBar{height:30px;border-bottom:1px solid #e3e3e3;background:#f7f7f7;display:flex;
+    align-items:center;padding:0 12px;font-size:12px;color:#666;gap:18px}
+  #panicPage{max-width:760px;margin:46px auto;padding:0 40px;font-size:15px;line-height:1.9;color:#333}
+  #panicCaret{display:inline-block;width:1px;height:1.05em;background:#333;vertical-align:-2px;
+    animation:caret 1.06s steps(1) infinite}
+  @keyframes caret{50%{opacity:0}}
+  #panicHint{position:fixed;bottom:10px;right:14px;font-size:10px;color:#e8e8e8}
+
+  /* -------------------------------------------------------------- overlays */
+  .scrim{position:fixed;inset:0;background:#000a;backdrop-filter:blur(3px);z-index:400;display:flex;
+    align-items:center;justify-content:center;padding:24px}
+  .modal{
+    background:var(--bg2);border:1px solid var(--line2);border-radius:14px;width:min(880px,100%);
+    max-height:88vh;display:flex;flex-direction:column;box-shadow:0 30px 90px -20px #000;
+  }
+  .modal header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .modal header h2{margin:0;font-size:18px;letter-spacing:.01em}
+  .modal .body{padding:16px 18px;overflow:auto;font-size:14.5px;line-height:1.55}
+  .modal footer{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;
+    flex-wrap:wrap}
+  .modal .x{margin-left:auto;background:transparent;border:0;color:var(--dim);font-size:20px;line-height:1}
+  .modal .x:hover{color:#fff}
+  .md h3{margin:16px 0 6px;font-size:15px;color:var(--cy);letter-spacing:.02em}
+  .md h2{margin:18px 0 6px;font-size:17px;color:#fff}
+  .md p{margin:6px 0}
+  .md li{margin:3px 0}
+  .md code{font-family:var(--mono);background:#0009;padding:1px 5px;border-radius:4px;font-size:.9em}
+  .md strong{color:#fff}
+
+  textarea.payload{
+    width:100%;min-height:190px;background:#04070b;border:1px solid var(--line2);border-radius:8px;
+    padding:10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;color:#c6d3e3;resize:vertical;
+  }
+
+  /* -------------------------------------------------------------- settings */
+  #settings{
+    position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);z-index:500;background:var(--bg2);
+    border-left:1px solid var(--line2);display:flex;flex-direction:column;
+    transform:translateX(102%);transition:transform .18s ease-out;box-shadow:-20px 0 60px -20px #000;
+  }
+  body.settingsOpen #settings{transform:none}
+  #settings header{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+  #settings header h2{margin:0;font-size:17px}
+  #settings .body{flex:1 1 auto;overflow:auto;padding:14px 16px 60px}
+  .fset{border:1px solid var(--line);border-radius:10px;padding:12px 13px;margin-bottom:12px;background:var(--panel)}
+  .fset>h3{margin:0 0 10px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--dim2)}
+  .row{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+  .row:last-child{margin-bottom:0}
+  .row label{font-size:12.5px;color:var(--dim);font-weight:600}
+  .row .hint{font-size:11.5px;color:var(--dim2);line-height:1.4}
+  .row input[type=text],.row input[type=password],.row input[type=number],.row select,.row textarea{
+    background:#04070b;border:1px solid var(--line2);border-radius:7px;padding:8px 10px;font-size:13.5px;width:100%;
+  }
+  .row textarea{min-height:74px;resize:vertical;line-height:1.4}
+  .row.inline{flex-direction:row;align-items:center;gap:9px}
+  .row.inline label{flex:1 1 auto}
+  input[type=range]{width:100%;accent-color:var(--cy)}
+  input[type=checkbox]{width:16px;height:16px;accent-color:var(--cy)}
+  .warn{background:#3a2a05;border:1px solid #6b5010;color:#ffdf9e;border-radius:8px;padding:9px 11px;
+    font-size:12px;line-height:1.45;margin-top:8px}
+  .warn.red{background:#3a0d11;border-color:#7a2028;color:#ffc9cd}
+  .warn.ok{background:#0c3226;border-color:#1c6d51;color:#a9f2d8}
+  .warn b{color:#fff}
+
+  /* ----------------------------------------------------------------- toast */
+  #toasts{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:900;
+    display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+  .toast{
+    background:#182234;border:1px solid #33445f;color:#e6eefb;border-radius:9px;padding:10px 16px;
+    font-size:13.5px;box-shadow:0 12px 40px -12px #000;animation:toastIn .16s ease-out;max-width:min(560px,92vw)
+  }
+  .toast.err{background:#3a1015;border-color:#7d2630;color:#ffd6da}
+  .toast.ok{background:#0d3326;border-color:#1e7455;color:#b7f5dd}
+  @keyframes toastIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+
+  /* ------------------------------------------------------------ misc small */
+  .kbd{font-family:var(--mono);font-size:10.5px;border:1px solid var(--line2);border-radius:4px;
+    padding:1px 5px;color:var(--dim)}
+  a{color:var(--cy)}
+  .netLogRow{font-family:var(--mono);font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);
+    padding:4px 0;display:flex;gap:10px}
+  .netLogRow .ok{color:var(--gr)} .netLogRow .bad{color:var(--rd)} .netLogRow .blk{color:var(--am)}
+</style>
+</head>
+<body>
+
+<!-- ===================================================================== APP -->
+<div id="app">
+
+  <!-- ------------------------------------------------------- status bar -->
+  <div id="statusbar">
+    <span class="sbItem"><span class="dot" id="sbCapDot"></span>CAP <b id="sbCap">idle</b></span>
+    <span class="sbItem">STT <b id="sbStt">web-speech</b></span>
+    <span class="sbItem">SUM <b id="sbBackend">handoff</b></span>
+    <span class="sbItem"><span class="dot" id="sbNetDot"></span><b id="sbNet">no outbound calls</b></span>
+    <span class="sbItem hidden" id="sbApiWrap">API <b id="sbApi">–</b></span>
+    <span class="sbItem hidden" id="sbCostWrap">COST <b id="sbCost">$0.0000</b></span>
+    <span id="sbSpacer"></span>
+    <span class="sbItem">BUF <b id="sbBuf">0w</b></span>
+    <span class="sbItem" id="sbClockWrap">MTG <b id="sbClock">00:00</b></span>
+  </div>
+
+  <!-- --------------------------------------------------- control strip -->
+  <div id="controls">
+    <button class="btn go" id="btnStart">▶ Start listening <span class="k">L</span></button>
+    <button class="btn stop hidden" id="btnStop">■ Stop <span class="k">L</span></button>
+    <button class="btn primary" id="btnCatchup">⚡ Catch me up <span class="k">C</span></button>
+
+    <span class="switchLabel">summarizer</span>
+    <div id="backendSwitch" role="group" aria-label="Summarizer backend">
+      <button class="seg on" data-b="handoff" title="Free. Copies a prompt to your clipboard and opens claude.ai — your Pro subscription pays. No API key, no calls from this page.">handoff</button>
+      <button class="seg" data-b="api" title="Costs money. Ambient auto-summary via the Anthropic API using your own key.">api</button>
+      <button class="seg" data-b="local" title="Nothing leaves the machine. Local intelligence layer only — the outbound choke point is hard-disabled.">local</button>
+    </div>
+
+    <span id="sbSpacer2" style="flex:1 1 auto"></span>
+    <button class="btn sm" id="btnDiscreet" title="Compact, low-key layout">◐ Discreet</button>
+    <button class="btn sm" id="btnExport" title="Download the meeting as Markdown">⭳ Export <span class="k">E</span></button>
+    <button class="btn sm" id="btnNew" title="Clear the meeting and start fresh">✧ New meeting</button>
+    <button class="btn sm" id="btnSettings">⚙ Settings <span class="k">S</span></button>
+  </div>
+
+  <!-- --------------------------------------------- while you were away -->
+  <div id="away" class="hidden">
+    <span id="awayText"></span>
+    <button class="btn sm" id="awayClose">Dismiss</button>
+  </div>
+
+  <!-- ---------------------------------------------------------- ALERT -->
+  <!-- Visually dominant when active, entirely absent when not. -->
+  <section id="alertZone" class="hidden" aria-live="assertive">
+    <div id="alertHead">
+      <div id="alertKind">YOU WERE ASKED SOMETHING</div>
+      <div id="alertAgo">just now</div>
+    </div>
+    <div id="alertQ"></div>
+    <ul id="alertPoints"></ul>
+    <div id="alertBar">
+      <button class="btn sm" id="alertDismiss">Dismiss <span class="k">D</span></button>
+      <button class="btn sm primary" id="alertCatchup">Get talking points <span class="k">C</span></button>
+      <span class="kbd" id="alertSrc"></span>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ NOW -->
+  <section id="nowZone">
+    <div class="zoneLabel">
+      <span>Now</span>
+      <span class="srcTag local" id="topicSrc">local</span>
+      <span id="topicChangedTag" class="hidden">TOPIC CHANGED</span>
+    </div>
+    <h1 id="topic" class="idle">Not listening yet</h1>
+    <div id="topicMeta">Press <span class="kbd">L</span> or click “Start listening”. No API key needed.</div>
+  </section>
+
+  <!-- -------------------------------------------------------- CONTEXT -->
+  <section id="contextZone">
+    <div class="col">
+      <div class="card">
+        <div class="zoneLabel"><span>Key terms right now</span></div>
+        <div id="chips"><span class="chipEmpty">waiting for speech…</span></div>
+      </div>
+
+      <div class="card hidden" id="bulletsCard">
+        <div class="zoneLabel"><span>Recent</span><span class="srcTag claude" id="bulletsSrc">claude</span></div>
+        <ul id="bullets"></ul>
+      </div>
+
+      <div class="card grow" id="tailCard">
+        <div class="zoneLabel">
+          <span>Live transcript — last <span id="tailSecs">30</span>s</span>
+          <span class="kbd" id="tailStatus"></span>
+        </div>
+        <div id="tail"><span id="tailEmpty">Nothing captured yet.</span></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <details class="panel" id="pDecisions" open>
+        <summary>Decisions <span class="count zero" id="cDecisions">0</span></summary>
+        <div class="body"><ul id="lDecisions"><li class="none">None yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pActions" open>
+        <summary>Action items <span class="count zero" id="cActions">0</span></summary>
+        <div class="body"><ul id="lActions"><li class="none">None yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pTimeline" open>
+        <summary>Topic timeline <span class="count zero" id="cTimeline">0</span></summary>
+        <div class="body"><ul id="lTimeline"><li class="none">Nothing yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pGlossary">
+        <summary>Glossary <span class="count zero" id="cGlossary">0</span></summary>
+        <div class="body"><ul id="lGlossary"><li class="none">None yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pNet">
+        <summary>Network log <span class="count zero" id="cNet">0</span></summary>
+        <div class="body">
+          <div class="hint" style="color:var(--dim2);font-size:11.5px;margin-bottom:8px">
+            Every outbound request this page makes passes through one function. This is that log.
+          </div>
+          <div id="lNet"><div class="netLogRow">no outbound requests</div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+</div>
+
+<!-- ================================================================ PANIC -->
+<!-- Esc blanks the screen to something innocuous. Second Esc restores. -->
+<div id="panic">
+  <div id="panicBar"><span>Document1</span><span>Page 1 of 1</span><span>0 words</span><span>English (US)</span></div>
+  <div id="panicPage"><span id="panicCaret"></span></div>
+  <div id="panicHint">Esc</div>
+</div>
+
+<!-- =============================================================== TOASTS -->
+<div id="toasts"></div>
+
+<!-- ============================================================== MODALS -->
+<div class="scrim hidden" id="handoffScrim">
+  <div class="modal">
+    <header>
+      <h2 id="handoffTitle">Catch me up — paste into Claude</h2>
+      <button class="x" data-close="handoffScrim">×</button>
+    </header>
+    <div class="body">
+      <div id="handoffStatus" class="warn ok" style="margin-top:0"></div>
+      <p style="color:var(--dim);font-size:13px;margin-top:12px">
+        1 — the prompt below is on your clipboard. 2 — a claude.ai tab was opened.
+        3 — paste and send. Your Pro subscription pays; this page made no API call.
+      </p>
+      <textarea class="payload" id="handoffText" spellcheck="false" style="min-height:230px"></textarea>
+      <div style="margin-top:14px">
+        <div class="zoneLabel" style="margin-bottom:6px"><span>Optional — paste Claude’s reply back</span></div>
+        <div class="hint" style="color:var(--dim2);font-size:12px;margin-bottom:6px">
+          Paste the answer here and the dashboard fills in from it — same rendering path the API backend uses.
+          Plain markdown or the raw JSON both work.
+        </div>
+        <textarea class="payload" id="handoffReply" spellcheck="false"
+          placeholder="Paste Claude's answer here…" style="min-height:110px"></textarea>
+      </div>
+    </div>
+    <footer>
+      <button class="btn" id="handoffCopy">⧉ Copy again</button>
+      <button class="btn" id="handoffOpen">↗ Open claude.ai</button>
+      <button class="btn primary" id="handoffApply">Apply reply to dashboard</button>
+      <span id="handoffLen" class="kbd"></span>
+    </footer>
+  </div>
+</div>
+
+<div class="scrim hidden" id="catchupScrim">
+  <div class="modal">
+    <header>
+      <h2>Catch me up</h2>
+      <button class="x" data-close="catchupScrim">×</button>
+    </header>
+    <div class="body md" id="catchupBody"></div>
+    <footer>
+      <button class="btn" data-close="catchupScrim">Close</button>
+      <span class="kbd" id="catchupMeta"></span>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================ SETTINGS -->
+<div id="settings">
+  <header>
+    <h2>Settings</h2>
+    <button class="x" style="margin-left:auto;background:transparent;border:0;color:var(--dim);font-size:22px"
+      id="settingsClose">×</button>
+  </header>
+  <div class="body">
+
+    <div class="fset">
+      <h3>Summarizer backend</h3>
+      <div class="row">
+        <select id="setBackend">
+          <option value="handoff">handoff — free, uses your Claude Pro subscription (default)</option>
+          <option value="api">api — Anthropic API, needs a key, costs money</option>
+          <option value="local">local — nothing leaves this machine</option>
+        </select>
+        <div class="hint" id="backendHint"></div>
+      </div>
+    </div>
+
+    <div class="fset" id="apiFset">
+      <h3>Anthropic API</h3>
+      <div class="row">
+        <label for="setKey">API key</label>
+        <input type="password" id="setKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+        <div class="warn red">
+          <b>Read this.</b> A <code>file://</code> page offers no real secret protection — anything running in
+          this browser profile can read <code>localStorage</code>. Use a personal, spend-limited key. Never a
+          shared or production one. The key is stored on this machine only and is never sent anywhere except
+          <code>api.anthropic.com</code>.
+        </div>
+      </div>
+      <div class="row">
+        <label for="setModel">Model</label>
+        <select id="setModel">
+          <option value="claude-sonnet-5">claude-sonnet-5 — balanced (default)</option>
+          <option value="claude-opus-5">claude-opus-5 — most capable, priciest</option>
+          <option value="claude-haiku-4-5">claude-haiku-4-5 — cheapest, fastest</option>
+        </select>
+        <div class="hint" id="priceHint"></div>
+      </div>
+      <div class="row">
+        <label>Ambient call interval — <b id="setIntervalVal">90</b>s</label>
+        <input type="range" id="setInterval" min="30" max="300" step="15">
+        <div class="hint">A call is skipped entirely when fewer than ~15 new words arrived, so silence costs nothing.</div>
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Capture</h3>
+      <div class="row">
+        <label for="setSource">Audio source</label>
+        <select id="setSource">
+          <option value="mic">Microphone — hears the room and your own speakers</option>
+          <option value="system">System / tab audio — hears remote participants directly</option>
+        </select>
+        <div class="hint" id="sourceHint"></div>
+      </div>
+      <div class="row">
+        <label for="setEngine">Speech-to-text engine</label>
+        <select id="setEngine">
+          <option value="webspeech">Web Speech — instant, no download, microphone only</option>
+          <option value="whisper">Local Whisper — works with system audio, audio stays on-machine</option>
+        </select>
+        <div class="hint" id="engineHint"></div>
+      </div>
+      <div class="row inline">
+        <label for="setAllowCdn">Allow the one-off Whisper model download</label>
+        <input type="checkbox" id="setAllowCdn">
+      </div>
+      <div class="hint">~40 MB from <code>cdn.jsdelivr.net</code> + <code>huggingface.co</code>, cached by the browser
+        afterwards. Required once before the Whisper engine can run. Corporate proxies often block it — if so the
+        app falls back to Web Speech and says so.</div>
+      <div class="row">
+        <label>Whisper chunk length — <b id="setChunkVal">24</b>s</label>
+        <input type="range" id="setChunk" min="10" max="30" step="2">
+        <div class="hint">Whisper transcribes in blocks, so text arrives in bursts this far apart. Shorter = more
+          responsive, more CPU.</div>
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Attention</h3>
+      <div class="row">
+        <label for="setNames">My name variants (comma separated)</label>
+        <input type="text" id="setNames" placeholder="Alex, Alexandra, Lex">
+        <div class="hint">Matched case-insensitively on whole words. Add the manglings speech-to-text actually
+          produces for your name — that is where the misses come from.</div>
+      </div>
+      <div class="row inline">
+        <label for="setQPatterns">Also alert on open questions with no name (“any thoughts?”)</label>
+        <input type="checkbox" id="setQPatterns">
+      </div>
+      <div class="row inline">
+        <label for="setChime">Soft chime on alert</label>
+        <input type="checkbox" id="setChime">
+      </div>
+      <div class="row">
+        <label>Alert auto-clears after — <b id="setAlertTtlVal">120</b>s</label>
+        <input type="range" id="setAlertTtl" min="30" max="300" step="15">
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Analysis window</h3>
+      <div class="row">
+        <label>Rolling window — <b id="setWindowVal">10</b> min</label>
+        <input type="range" id="setWindow" min="5" max="20" step="1">
+        <div class="hint">Everything analytical — keywords, topic detection, the ambient summary — looks only at
+          this much recent speech. The full meeting is still kept for export and catch-up.</div>
+      </div>
+      <div class="row">
+        <label>Topic-change sensitivity — <b id="setTopicThVal">0.35</b></label>
+        <input type="range" id="setTopicTh" min="0.15" max="0.6" step="0.05">
+        <div class="hint">Cosine similarity between consecutive 60s term vectors. Higher = fires more often.</div>
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Context sent to Claude</h3>
+      <div class="row">
+        <label for="setProfile">User profile</label>
+        <textarea id="setProfile" placeholder="Who you are, your role, what you own, what you care about in this meeting."></textarea>
+      </div>
+      <div class="row">
+        <label for="setContext">Pre-meeting context</label>
+        <textarea id="setContext" placeholder="Agenda, attendees, projects, acronyms."></textarea>
+        <div class="hint">Attendee names here make the “who asked me” attribution far better in api mode.</div>
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Keyboard</h3>
+      <div class="hint" style="line-height:1.9">
+        <span class="kbd">L</span> start/stop listening &nbsp;
+        <span class="kbd">C</span> catch me up &nbsp;
+        <span class="kbd">S</span> settings &nbsp;
+        <span class="kbd">D</span> dismiss alert &nbsp;
+        <span class="kbd">E</span> export &nbsp;
+        <span class="kbd">V</span> discreet &nbsp;
+        <span class="kbd">Esc</span> panic-hide / restore
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Data</h3>
+      <div class="hint">Settings and the in-flight meeting live in this browser’s <code>localStorage</code>, so an
+        accidental refresh mid-meeting is not fatal. Nothing is uploaded anywhere.</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" id="btnWipe">Erase all stored data</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   SPACECADET
+   One file. Vanilla JS. No build step. Runs from file://.
+   ========================================================================= */
+(function () {
+'use strict';
+
+/* ===================================================================== 1. constants */
+
+/* transformers.js moved from @xenova/transformers to @huggingface/transformers.
+   Verified current package + CDN entry point. Pinned deliberately: an unpinned
+   "@latest" would silently change behaviour mid-meeting. */
+var TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+
+/* onnx-community hosts the WebGPU-friendly export; Xenova is the original repo and
+   is the wasm fallback. Tried in order — whichever loads first wins. */
+var WHISPER_MODELS = ['onnx-community/whisper-tiny.en', 'Xenova/whisper-tiny.en'];
+
+var ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+var CLAUDE_NEW    = 'https://claude.ai/new';
+
+/* USD per 1M tokens, Anthropic list price. Sonnet 5 carries a promotional
+   introductory rate below this through 2026-08-31; list price is used so the
+   meter never under-reports what a call will cost. */
+var PRICES = {
+  'claude-sonnet-5':  { in: 3.00, out: 15.00, label: 'Sonnet 5' },
+  'claude-opus-5':    { in: 5.00, out: 25.00, label: 'Opus 5'   },
+  'claude-haiku-4-5': { in: 1.00, out:  5.00, label: 'Haiku 4.5'}
+};
+
+/* Structured-output contract for the api backend. */
+var RESPONSE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['topic','topic_changed','bullets','user_addressed','talking_points','decisions','actions','glossary'],
+  properties: {
+    topic: { type: 'string' },
+    topic_changed: { type: 'boolean' },
+    bullets: { type: 'array', items: { type: 'string' } },
+    user_addressed: {
+      type: ['object','null'],
+      additionalProperties: false,
+      required: ['asked_by','question','kind'],
+      properties: {
+        asked_by: { type: 'string' },
+        question: { type: 'string' },
+        kind: { type: 'string', enum: ['direct_question','mentioned','assigned'] }
+      }
+    },
+    talking_points: { type: 'array', items: { type: 'string' } },
+    decisions: { type: 'array', items: { type: 'string' } },
+    actions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text','owner','mine'],
+        properties: {
+          text:  { type: 'string' },
+          owner: { type: 'string' },
+          mine:  { type: 'boolean' }
+        }
+      }
+    },
+    glossary: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['term','definition'],
+        properties: { term: { type: 'string' }, definition: { type: 'string' } }
+      }
+    }
+  }
+};
+
+/* The same prompt text drives BOTH the api backend and the clipboard handoff,
+   so a pasted prompt behaves identically to an ambient call. */
+function buildSystemPrompt(profile, context) {
+  return [
+'You help someone who has lost focus in a live meeting re-enter the conversation quickly.',
+'',
+'You receive your own previous state, plus a new chunk of rough speech-to-text transcript.',
+'The transcript is machine-generated: expect misheard words, missing punctuation, no speaker',
+'labels, and dropped words. Infer intent. Never quote transcription errors back verbatim.',
+'',
+'USER PROFILE:',
+(profile && profile.trim()) || '(none given)',
+'',
+'MEETING CONTEXT (agenda, attendees, projects — may be empty):',
+(context && context.trim()) || '(none given)',
+'',
+'Rules:',
+'- topic: 3-8 words naming what is being discussed at the END of the chunk. Not a summary of the',
+'  whole chunk — what they are on RIGHT NOW.',
+'- topic_changed: true only if meaningfully different from the previous topic. Ignore drift.',
+'- bullets: 3-5 bullets covering the recent window, most recent first, each under 20 words.',
+'  Plain language. No preamble, no "the team discussed".',
+'- user_addressed: non-null ONLY if the user was directly asked something, assigned something, or',
+'  named in a way that expects a response. Someone merely saying their name in passing is',
+'  "mentioned". Be conservative — a false alarm is worse than a miss here.',
+'- talking_points: only when user_addressed is non-null. 2-3 short things the user could actually',
+'  say, grounded in what was discussed. Not generic filler.',
+'- decisions / actions / glossary: only NEW items from this chunk. Never repeat items you have',
+'  already reported. Empty arrays are correct and expected most of the time.',
+'- glossary: only genuinely non-obvious acronyms, jargon, or proper nouns.',
+'- If the chunk is silence, filler, or crosstalk with no substance: repeat the previous topic',
+'  unchanged and return empty arrays.'
+  ].join('\n');
+}
+
+/* Words that carry no topical signal. Includes the verbal filler that dominates
+   raw speech-to-text and would otherwise win every keyword ranking. */
+var STOPWORDS = (
+'a about above actually after again against all almost also always am an and another any anybody anyone anything '+
+'are around as at back basically be because been before being below best better between both but by came can '+
+'cannot cant come could couldnt did didnt do does doesnt doing done dont down during each either else enough even '+
+'ever every everybody everyone everything exactly few finally first for from further get gets getting give given '+
+'go goes going gone good got great had hadnt has hasnt have havent having he hell hes her here hers herself him '+
+'himself his how however i id if ill im in into is isnt it its itself ive just keep kind know last let lets like '+
+'literally little ll look looking lot made make makes making many maybe me mean means might mine more most much '+
+'must my myself need needs never new next no nobody not nothing now number obviously of off ok okay on once one '+
+'only or other others otherwise ought our ours ourselves out over own part people perhaps pretty probably put '+
+'quite range rather re real really right run said same say saying says see seem seems seen sense set shall she '+
+'shes should shouldnt show side since so some somebody somehow someone something sometimes sort stuff such sure '+
+'take taken talk talking tell than that thats the their theirs them themselves then there theres these they '+
+'theyre theyve thing things think this those though thought three through thus time to today together too took '+
+'total two under until up upon us use used using usually very want was wasnt way we well were weve what whatever '+
+'when where whether which while who whole whom why will with within without wont work would wouldnt yeah year '+
+'years yes yet you youd youll your youre yours yourself youve '+
+/* speech filler + transcription noise */
+'uh um uhh umm er erm ah aha oh hmm hm mhm mm yep yup nope gonna wanna gotta sorta kinda anyway anyways alright '+
+'guys folks everybody hey hi hello thanks thank welcome bye stuff etc blah'
+).split(/\s+/).filter(Boolean);
+var STOP = Object.create(null);
+STOPWORDS.forEach(function (w) { STOP[w] = 1; });
+
+/* Fast-loop question patterns. Deliberately narrow: a false alarm costs more
+   trust than a miss, and the name matcher is the high-precision path. */
+var QUESTION_PATTERNS = [
+  { re: /\bwhat (do|did) you think\b/i,            label: 'what do you think' },
+  { re: /\bany thoughts\b/i,                       label: 'any thoughts' },
+  { re: /\bthoughts on (this|that)\b/i,            label: 'thoughts on this' },
+  { re: /\bover to you\b/i,                        label: 'over to you' },
+  { re: /\bhow about you\b/i,                      label: 'how about you' },
+  { re: /\bwhat about you\b/i,                     label: 'what about you' },
+  { re: /\bcan you (take|walk|give|share|cover|speak|talk|do|pick|update|run)\b/i, label: 'can you …' },
+  { re: /\bcould you (take|walk|give|share|cover|speak|talk|do|pick|update|run)\b/i, label: 'could you …' },
+  { re: /\bwould you (mind|be able)\b/i,           label: 'would you …' },
+  { re: /\bdo you (have|want|know|see|agree)\b/i,  label: 'do you …' },
+  { re: /\byour (take|view|thoughts|read|opinion)\b/i, label: 'your take' },
+  { re: /\bwhat(?:'| i)?s your\b/i,                label: "what's your …" },
+  { re: /\bany (objections|concerns|questions)\b/i,label: 'any objections' },
+  { re: /\bdoes that work for you\b/i,             label: 'does that work for you' },
+  { re: /\bare you (ok|okay|good|able|comfortable)\b/i, label: 'are you ok with …' },
+  { re: /\bcan (you|we) get\b/i,                   label: 'can you get …' },
+  { re: /\bwho(?:'| i)?s (taking|owning|driving)\b/i, label: "who's taking …" }
+];
+
+/* Whisper reliably hallucinates these on silence or noise. Dropping them is a
+   hallucination guard, not transcript correction — they are model artefacts,
+   not mishearings of anything that was said. */
+var WHISPER_JUNK = /^(you|thank you\.?|thanks for watching!?|bye\.?|\.|thank you very much\.?|okay\.?|so\.?|\[.*\]|\(.*\))$/i;
+
+/* ===================================================================== 2. small utils */
+
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function clamp(n, lo, hi) { return n < lo ? lo : (n > hi ? hi : n); }
+function now() { return Date.now(); }
+
+function agoText(ms) {
+  var s = Math.max(0, Math.round((now() - ms) / 1000));
+  if (s < 5)  return 'just now';
+  if (s < 60) return s + 's ago';
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's ago';
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm ago';
+}
+function clockText(ms) {
+  var s = Math.max(0, Math.round(ms / 1000));
+  var m = Math.floor(s / 60), h = Math.floor(m / 60);
+  var mm = (m % 60 < 10 ? '0' : '') + (m % 60), ss = (s % 60 < 10 ? '0' : '') + (s % 60);
+  return h > 0 ? (h + ':' + mm + ':' + ss) : (mm + ':' + ss);
+}
+function hhmm(ms) {
+  var d = new Date(ms), p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+var toastTimers = [];
+function toast(msg, kind, ttl) {
+  var box = $('toasts');
+  var el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  box.appendChild(el);
+  var t = setTimeout(function () {
+    el.style.transition = 'opacity .3s'; el.style.opacity = '0';
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+  }, ttl || 4200);
+  toastTimers.push(t);
+  if (toastTimers.length > 40) clearTimeout(toastTimers.shift());
+}
+
+/* Normalise a phrase for dedupe: lowercase, strip punctuation, collapse space. */
+function normKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function tokenize(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .split(/\s+/)
+    .filter(function (w) { return w.length > 2 && !STOP[w.replace(/'/g,'')] && !/^\d+$/.test(w); });
+}
+function wordCount(s) {
+  var m = String(s || '').trim().match(/\S+/g);
+  return m ? m.length : 0;
+}
+
+/* ===================================================================== 3. persisted settings */
+
+var SETTINGS_KEY = 'spacecadet.settings.v1';
+var MEETING_KEY  = 'spacecadet.meeting.v1';
+
+var DEFAULTS = {
+  backend: 'handoff',          // handoff (default, free) | api | local
+  apiKey: '',
+  model: 'claude-sonnet-5',
+  intervalSec: 90,
+  source: 'mic',               // mic | system
+  engine: 'webspeech',         // webspeech | whisper
+  allowCdn: false,
+  chunkSec: 24,
+  names: '',
+  qPatterns: true,
+  chime: false,
+  alertTtlSec: 120,
+  windowMin: 10,
+  topicTh: 0.35,
+  profile: '',
+  context: '',
+  discreet: false
+};
+
+var CFG = load(SETTINGS_KEY, DEFAULTS);
+function load(key, defaults) {
+  var out = {};
+  for (var k in defaults) out[k] = defaults[k];
+  try {
+    var raw = localStorage.getItem(key);
+    if (raw) {
+      var p = JSON.parse(raw);
+      for (var j in defaults) if (p[j] !== undefined && p[j] !== null) out[j] = p[j];
+    }
+  } catch (e) { /* corrupt or unavailable storage: defaults are fine */ }
+  return out;
+}
+var saveCfgTimer = null;
+function saveCfg() {
+  clearTimeout(saveCfgTimer);
+  saveCfgTimer = setTimeout(function () {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(CFG)); }
+    catch (e) { /* private mode / quota */ }
+  }, 250);
+}
+
+/* ===================================================================== 4. meeting state */
+
+/* MEET.frags is the FULL meeting log (used for export and catch-up).
+   The rolling window governs everything analytical — see windowFrags(). */
+var MEET = {
+  startedAt: 0,
+  frags: [],          // {t, text, final:true}
+  decisions: [],      // {text, t}
+  actions: [],        // {text, owner, mine, t}
+  glossary: [],       // {term, definition, t}
+  timeline: [],       // {topic, t, src}
+  alerts: [],         // {t, kind, question, who}
+  cost: { inTok: 0, outTok: 0, calls: 0, usd: 0 },
+  lastSentT: 0,       // incremental-summarisation watermark
+  llmTopic: '',
+  llmBullets: [],
+  llmTalkingPoints: [],
+  llmAt: 0
+};
+
+function restoreMeeting() {
+  try {
+    var raw = localStorage.getItem(MEETING_KEY);
+    if (!raw) return false;
+    var p = JSON.parse(raw);
+    if (!p || !p.startedAt) return false;
+    ['startedAt','decisions','actions','glossary','timeline','alerts','cost',
+     'lastSentT','llmTopic','llmBullets','llmTalkingPoints','llmAt'].forEach(function (k) {
+      if (p[k] !== undefined && p[k] !== null) MEET[k] = p[k];
+    });
+    MEET.frags = Array.isArray(p.frags) ? p.frags : [];
+    return true;
+  } catch (e) { return false; }
+}
+
+var saveMeetTimer = null;
+function saveMeeting() {
+  clearTimeout(saveMeetTimer);
+  saveMeetTimer = setTimeout(doSaveMeeting, 1500);
+}
+function doSaveMeeting() {
+  if (!MEET.startedAt) return;
+  /* Persist a capped tail of the transcript: localStorage is ~5MB and a long
+     meeting will happily exceed it. Everything else is small. */
+  var cap = 900;
+  var attempt = function (n) {
+    var snap = {
+      startedAt: MEET.startedAt,
+      frags: MEET.frags.slice(-n),
+      decisions: MEET.decisions, actions: MEET.actions, glossary: MEET.glossary,
+      timeline: MEET.timeline, alerts: MEET.alerts.slice(-40), cost: MEET.cost,
+      lastSentT: MEET.lastSentT, llmTopic: MEET.llmTopic, llmBullets: MEET.llmBullets,
+      llmTalkingPoints: MEET.llmTalkingPoints, llmAt: MEET.llmAt,
+      truncated: MEET.frags.length > n
+    };
+    localStorage.setItem(MEETING_KEY, JSON.stringify(snap));
+  };
+  try { attempt(cap); }
+  catch (e) {
+    try { attempt(250); }
+    catch (e2) {
+      try { localStorage.removeItem(MEETING_KEY); } catch (e3) {}
+      status('storage full — meeting will not survive a refresh', 'warn');
+    }
+  }
+}
+
+function resetMeeting() {
+  MEET.startedAt = 0; MEET.frags = []; MEET.decisions = []; MEET.actions = [];
+  MEET.glossary = []; MEET.timeline = []; MEET.alerts = [];
+  MEET.cost = { inTok: 0, outTok: 0, calls: 0, usd: 0 };
+  MEET.lastSentT = 0; MEET.llmTopic = ''; MEET.llmBullets = []; MEET.llmTalkingPoints = []; MEET.llmAt = 0;
+  VIEW.topic = ''; VIEW.topicSrc = 'local'; VIEW.topicAt = 0; VIEW.bullets = [];
+  VIEW.chips = []; VIEW.alert = null; VIEW.lastTopicVec = null; VIEW.lastChangeAt = 0;
+  try { localStorage.removeItem(MEETING_KEY); } catch (e) {}
+}
+
+/* ===================================================================== 5. view state
+   ONE object. Every backend writes here; render() reads only here. The UI has no
+   idea which backend produced what it is showing. */
+var VIEW = {
+  topic: '', topicSrc: 'local', topicAt: 0, topicChangedAt: 0,
+  bullets: [], bulletsSrc: 'claude', bulletsAt: 0,
+  chips: [],
+  tail: [],                 // rendered fragments in the tail window
+  interim: '',              // live, not-yet-final speech
+  alert: null,              // {kind, who, question, at, points[], severity, src}
+  capture: 'idle',          // idle | starting | live | error
+  captureMsg: '',
+  sttMsg: '',
+  api: { state: 'idle', latency: 0, msg: '', nextRetryAt: 0 },
+  lastTopicVec: null, lastChangeAt: 0,
+  netCount: 0, netLog: []
+};
+
+/* ===================================================================== 6. rolling buffer */
+
+/* Fragments are appended finalised-only. Interim text lives in VIEW.interim and is
+   overwritten, never accumulated — speech engines re-emit a growing interim string
+   for the same utterance and appending it would triple-count every word. */
+function addFragment(text, t) {
+  text = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!text) return;
+  if (!MEET.startedAt) { MEET.startedAt = t; }
+  MEET.frags.push({ t: t, text: text });
+  saveMeeting();
+}
+
+function windowMs() { return clamp(CFG.windowMin, 5, 20) * 60 * 1000; }
+
+/* The analytical window. The full log stays in MEET.frags for export + catch-up. */
+function windowFrags() {
+  var cut = now() - windowMs();
+  var out = [], f = MEET.frags;
+  for (var i = f.length - 1; i >= 0; i--) {
+    if (f[i].t < cut) break;
+    out.push(f[i]);
+  }
+  return out.reverse();
+}
+function fragsSince(t) {
+  var out = [], f = MEET.frags;
+  for (var i = f.length - 1; i >= 0; i--) {
+    if (f[i].t <= t) break;
+    out.push(f[i]);
+  }
+  return out.reverse();
+}
+function fragsBetween(a, b) {
+  return MEET.frags.filter(function (f) { return f.t >= a && f.t < b; });
+}
+function joinFrags(list) { return list.map(function (f) { return f.text; }).join(' '); }
+
+/* ===================================================================== 7. local intelligence
+   Everything below is plain JS over the buffer. No network, no key, always on.
+   This layer is what makes the app useful in the default handoff backend. */
+
+/* ---- 7a. keyword chips: crude TF-IDF, damped by meeting-wide frequency ---- */
+
+function stemish(w) {
+  if (w.length > 4 && /s$/.test(w) && !/(ss|us|is)$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+function rawWords(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
+}
+function isContent(w) {
+  var k = w.replace(/'/g, '');
+  return k.length > 2 && !STOP[k] && !/^\d+$/.test(k);
+}
+
+/* Count unigrams + adjacent content bigrams over a list of fragments. */
+function countTerms(list) {
+  var uni = Object.create(null), big = Object.create(null), surface = Object.create(null), total = 0;
+  for (var i = 0; i < list.length; i++) {
+    var ws = rawWords(list[i].text);
+    var prev = null;
+    for (var j = 0; j < ws.length; j++) {
+      var w = ws[j];
+      if (!isContent(w)) { prev = null; continue; }
+      var k = stemish(w.replace(/'/g, ''));
+      uni[k] = (uni[k] || 0) + 1;
+      total++;
+      if (!surface[k] || w.length < surface[k].length) surface[k] = w;
+      if (prev) {
+        var bk = prev + ' ' + k;
+        big[bk] = (big[bk] || 0) + 1;
+      }
+      prev = k;
+    }
+  }
+  return { uni: uni, big: big, surface: surface, total: total };
+}
+
+var meetingCounts = { uni: Object.create(null), total: 0, at: 0 };
+function refreshMeetingCounts() {
+  /* Recomputed lazily — the whole-meeting tally only needs to be roughly current. */
+  if (now() - meetingCounts.at < 8000 && meetingCounts.total) return;
+  var c = countTerms(MEET.frags);
+  meetingCounts = { uni: c.uni, total: c.total || 1, at: now() };
+}
+
+function computeChips(list) {
+  refreshMeetingCounts();
+  var c = countTerms(list);
+  if (!c.total) return [];
+
+  /* idf-ish damping: a term said constantly all meeting carries less information
+     about what is happening RIGHT NOW than one that just spiked. */
+  function score(key, tf) {
+    var seen = meetingCounts.uni[key] || tf;
+    return tf * Math.log(1 + (meetingCounts.total / (1 + seen)));
+  }
+
+  var uniScores = {};
+  Object.keys(c.uni).forEach(function (k) {
+    if (c.uni[k] < 2 && list.length > 6) return;    // one mention is noise once there is enough speech
+    uniScores[k] = score(k, c.uni[k]);
+  });
+
+  var picks = [];
+  var suppressed = Object.create(null);
+
+  /* Bigrams first: "release train" reads better than "release" + "train". */
+  Object.keys(c.big).forEach(function (bk) {
+    var n = c.big[bk];
+    if (n < 2) return;
+    var parts = bk.split(' ');
+    var partScore = Math.max(uniScores[parts[0]] || 0, uniScores[parts[1]] || 0);
+    var bScore = n * 2.1 * Math.log(1 + (meetingCounts.total / (1 + n)));
+    if (bScore > partScore * 1.1) {
+      picks.push({ key: bk, label: bk, n: n, score: bScore });
+      suppressed[parts[0]] = 1; suppressed[parts[1]] = 1;
+    }
+  });
+
+  Object.keys(uniScores).forEach(function (k) {
+    if (suppressed[k]) return;
+    picks.push({ key: k, label: c.surface[k] || k, n: c.uni[k], score: uniScores[k] });
+  });
+
+  picks.sort(function (a, b) { return b.score - a.score; });
+  return picks.slice(0, 6);
+}
+
+/* ---- 7b. topic-change detection: cosine between consecutive 60s windows ---- */
+
+function termVector(list) {
+  var v = Object.create(null), n = 0;
+  for (var i = 0; i < list.length; i++) {
+    var ws = rawWords(list[i].text);
+    for (var j = 0; j < ws.length; j++) {
+      if (!isContent(ws[j])) continue;
+      var k = stemish(ws[j].replace(/'/g, ''));
+      v[k] = (v[k] || 0) + 1; n++;
+    }
+  }
+  return { v: v, n: n };
+}
+function cosine(a, b) {
+  var dot = 0, na = 0, nb = 0, k;
+  for (k in a) { na += a[k] * a[k]; if (b[k]) dot += a[k] * b[k]; }
+  for (k in b) { nb += b[k] * b[k]; }
+  if (!na || !nb) return 1;                     // no signal: treat as "unchanged"
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+var lastTopicEval = 0;
+function evaluateTopicChange() {
+  var t = now();
+  if (t - lastTopicEval < 15000) return;         // slide the evaluation, don't block on 60s edges
+  lastTopicEval = t;
+
+  var cur  = termVector(fragsBetween(t - 60000, t));
+  var prev = termVector(fragsBetween(t - 120000, t - 60000));
+  if (cur.n < 25 || prev.n < 25) return;         // not enough speech to judge
+
+  var sim = cosine(cur.v, prev.v);
+  if (sim >= CFG.topicTh) return;
+  if (t - VIEW.lastChangeAt < 45000) return;     // cooldown: one flash per topic, not per tick
+
+  VIEW.lastChangeAt = t;
+  VIEW.topicChangedAt = t;
+  pushTimeline(localTopicLabel() || 'new topic', 'local', t);
+  flashTopicChanged();
+}
+
+/* ---- 7c. local topic label: the top chips ARE the answer to "what now?" ---- */
+
+function localTopicLabel() {
+  var chips = VIEW.chips;
+  if (!chips || !chips.length) return '';
+  return chips.slice(0, 3).map(function (c) { return c.label; }).join(' · ');
+}
+
+/* ---- 7d. FAST LOOP — name + question alerts.
+   Runs on every incoming fragment including interim results, so it fires before
+   the speaker has finished the sentence. Never touches the network, never waits
+   on a backend, works with no API key. This is the most time-critical path. ---- */
+
+var nameRe = null, nameReSrc = '';
+function buildNameRegex() {
+  var src = String(CFG.names || '');
+  if (src === nameReSrc) return nameRe;
+  nameReSrc = src;
+  var parts = src.split(',').map(function (s) { return s.trim(); })
+                 .filter(function (s) { return s.length >= 2; })
+                 .map(function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+  nameRe = parts.length ? new RegExp('\\b(' + parts.join('|') + ')\\b', 'i') : null;
+  return nameRe;
+}
+
+var lastNameHitAt = 0;
+var recentAlertKeys = {};      // key -> t, so one utterance cannot fire ten times
+
+function scanFragment(text, t) {
+  if (!text) return;
+  var re = buildNameRegex();
+  var nameHit = re ? re.exec(text) : null;
+  if (nameHit) lastNameHitAt = t;
+
+  var qHit = null;
+  for (var i = 0; i < QUESTION_PATTERNS.length; i++) {
+    var m = QUESTION_PATTERNS[i].re.exec(text);
+    if (m) { qHit = { m: m, label: QUESTION_PATTERNS[i].label }; break; }
+  }
+  if (!nameHit && !qHit) return;
+
+  /* Precision ladder. A false alarm costs more trust than a miss, so the loud
+     alert needs a name; a bare question pattern gets the quieter amber one. */
+  var kind, severity, matchIdx, matchStr, label;
+  if (nameHit && qHit) {
+    kind = 'direct_question'; severity = 'hard';
+    matchIdx = Math.min(nameHit.index, qHit.m.index);
+    matchStr = nameHit[0]; label = nameHit[0] + ' + "' + qHit.label + '"';
+  } else if (nameHit) {
+    kind = 'mentioned'; severity = 'hard';
+    matchIdx = nameHit.index; matchStr = nameHit[0]; label = nameHit[0];
+  } else {
+    if (!CFG.qPatterns) return;
+    /* A question pattern within 12s of your name being said is almost certainly
+       still aimed at you, even though the name landed in an earlier fragment. */
+    var recentName = (t - lastNameHitAt) < 12000;
+    kind = recentName ? 'direct_question' : 'open_question';
+    severity = recentName ? 'hard' : 'soft';
+    matchIdx = qHit.m.index; matchStr = qHit.m[0]; label = qHit.label;
+  }
+
+  /* The key is built ONLY from text up to and including the match. Interim results
+     grow to the right, so anything after the match would change the key on every
+     update and re-fire the same alert a dozen times per sentence. */
+  var key = normKey(text.slice(Math.max(0, matchIdx - 30), matchIdx + matchStr.length));
+  var prev = recentAlertKeys[key];
+  if (prev && (t - prev) < 25000) {
+    /* Same utterance, more of it heard. Refine the quoted question in place —
+       without resetting "how long ago", which is the number the user is reading. */
+    if (VIEW.alert && VIEW.alert.key === key) {
+      var better = extractQuestion(text, matchIdx);
+      if (better.length > (VIEW.alert.question || '').length) {
+        VIEW.alert.question = better;
+        renderSoon();
+      }
+    }
+    return;
+  }
+  recentAlertKeys[key] = t;
+  if (Object.keys(recentAlertKeys).length > 60) recentAlertKeys = {};
+
+  fireAlert({
+    kind: kind,
+    severity: severity,
+    who: '',                                    // no diarization: we honestly do not know
+    question: extractQuestion(text, matchIdx),
+    at: t,
+    points: [],
+    src: 'local',
+    matched: label,
+    key: key
+  });
+}
+
+/* Pull a readable sentence-ish window around the match rather than the raw fragment. */
+function extractQuestion(text, idx) {
+  var start = Math.max(0, idx - 150);
+  var end = Math.min(text.length, idx + 160);
+  var s = text.slice(start, end).trim();
+  var cut = s.search(/[.?!]\s+\S/);
+  if (cut > -1 && cut < (idx - start) - 10) s = s.slice(cut + 1).trim();
+  if (start > 0) s = '… ' + s;
+  if (end < text.length) s = s + ' …';
+  return s;
+}
+
+/* What was being said just before — genuinely useful when you have no LLM,
+   and honest about being context rather than suggested lines. */
+function recentContextLines(n) {
+  var list = MEET.frags.slice(-14);
+  var txt = joinFrags(list);
+  var sents = txt.split(/(?<=[.?!])\s+/).filter(function (s) { return wordCount(s) >= 4; });
+  return sents.slice(-(n || 2));
+}
+
+function fireAlert(a) {
+  /* An existing HARD alert is not replaced by a SOFT one — being told your name
+     was said outranks a generic "any thoughts?" a few seconds later. */
+  if (VIEW.alert && VIEW.alert.severity === 'hard' && a.severity === 'soft' &&
+      (now() - VIEW.alert.at) < 20000) return;
+
+  /* Consecutive api calls can report the same question twice. Re-raising it would
+     reset the "how long ago" clock and lie about when it was asked. */
+  if (VIEW.alert && a.question && normKey(VIEW.alert.question) === normKey(a.question) &&
+      (now() - VIEW.alert.at) < 120000) {
+    if (a.points && a.points.length) { VIEW.alert.points = a.points; VIEW.alert.pointsAre = 'talking points from Claude'; }
+    renderSoon();
+    return;
+  }
+
+  if (!a.points || !a.points.length) {
+    if (MEET.llmTalkingPoints && MEET.llmTalkingPoints.length && (now() - MEET.llmAt) < 180000) {
+      a.points = MEET.llmTalkingPoints.slice(0, 3);
+      a.pointsAre = 'talking points from Claude';
+    } else {
+      a.points = recentContextLines(2);
+      a.pointsAre = 'what was said just before';
+    }
+  } else {
+    a.pointsAre = 'talking points from Claude';
+  }
+
+  VIEW.alert = a;
+  MEET.alerts.push({ t: a.at, kind: a.kind, question: a.question, who: a.who || '' });
+  if (CFG.chime) chime(a.severity);
+  saveMeeting();
+  renderSoon();
+}
+
+function dismissAlert() {
+  VIEW.alert = null;
+  renderSoon();
+}
+
+/* Soft two-tone chime, built with WebAudio so the file stays self-contained. */
+var audioCtxForChime = null;
+function chime(severity) {
+  try {
+    if (!audioCtxForChime) audioCtxForChime = new (window.AudioContext || window.webkitAudioContext)();
+    var ctx = audioCtxForChime;
+    if (ctx.state === 'suspended') ctx.resume();
+    var base = severity === 'hard' ? 880 : 620;
+    [0, 0.14].forEach(function (dt, i) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = i === 0 ? base : base * 1.3348;
+      var t0 = ctx.currentTime + dt;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.14, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0); o.stop(t0 + 0.3);
+    });
+  } catch (e) { /* audio is a nicety, never a failure path */ }
+}
+
+/* ---- 7e. accumulators shared by every backend ---- */
+
+function pushTimeline(topic, src, t) {
+  var last = MEET.timeline[MEET.timeline.length - 1];
+  if (last && normKey(last.topic) === normKey(topic)) return;
+  MEET.timeline.push({ topic: topic, t: t || now(), src: src || 'local' });
+  if (MEET.timeline.length > 200) MEET.timeline.shift();
+  saveMeeting();
+}
+function addDecisions(arr) {
+  if (!arr || !arr.length) return 0;
+  var added = 0;
+  arr.forEach(function (d) {
+    var text = typeof d === 'string' ? d : (d && d.text);
+    if (!text) return;
+    var k = normKey(text);
+    if (!k || MEET.decisions.some(function (x) { return normKey(x.text) === k; })) return;
+    MEET.decisions.push({ text: text, t: now() }); added++;
+  });
+  if (added) saveMeeting();
+  return added;
+}
+function addActions(arr) {
+  if (!arr || !arr.length) return 0;
+  var added = 0;
+  arr.forEach(function (a) {
+    if (!a) return;
+    var text = typeof a === 'string' ? a : a.text;
+    if (!text) return;
+    var k = normKey(text);
+    if (MEET.actions.some(function (x) { return normKey(x.text) === k; })) return;
+    MEET.actions.push({
+      text: text,
+      owner: (a && a.owner) || '',
+      mine: !!(a && a.mine),
+      t: now()
+    });
+    added++;
+  });
+  if (added) saveMeeting();
+  return added;
+}
+function addGlossary(arr) {
+  if (!arr || !arr.length) return 0;
+  var added = 0;
+  arr.forEach(function (g) {
+    if (!g || !g.term) return;
+    var k = normKey(g.term);
+    if (MEET.glossary.some(function (x) { return normKey(x.term) === k; })) return;
+    MEET.glossary.push({ term: g.term, definition: g.definition || '', t: now() });
+    added++;
+  });
+  if (added) saveMeeting();
+  return added;
+}
+
+/* ---- 7f. the local recompute tick ---- */
+
+function recomputeLocal() {
+  var list = windowFrags();
+  VIEW.chips = computeChips(list);
+  evaluateTopicChange();
+
+  /* The local layer owns the NOW line unless a Claude topic is fresher. */
+  var local = localTopicLabel();
+  var llmFresh = MEET.llmTopic && (now() - MEET.llmAt) < 240000;
+  if (llmFresh) {
+    VIEW.topic = MEET.llmTopic; VIEW.topicSrc = 'claude'; VIEW.topicAt = MEET.llmAt;
+  } else if (local) {
+    VIEW.topic = local; VIEW.topicSrc = 'local';
+    VIEW.topicAt = MEET.frags.length ? MEET.frags[MEET.frags.length - 1].t : now();
+  }
+}
+
+/* ===================================================================== 8. audio capture */
+
+var captureStream = null;
+
+function captureError(msg, hint) {
+  var e = new Error(msg);
+  e.hint = hint || '';
+  return e;
+}
+
+/* Two selectable sources. Both hand back a MediaStream carrying exactly one audio track. */
+async function acquireStream(source) {
+  if (!navigator.mediaDevices) {
+    throw captureError('This browser exposes no microphone API.',
+      'Chrome or Edge is required. If you are on http:// rather than file:// or https://, media capture is blocked outright.');
+  }
+
+  if (source === 'mic') {
+    /* echoCancellation MUST be off. It is designed to remove whatever is coming out
+       of your speakers — which in a meeting is exactly the audio we came for.
+       noiseSuppression off for the same reason; AGC on, because meeting audio at
+       laptop-speaker volume is quiet. */
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true },
+      video: false
+    });
+  }
+
+  /* video:true is mandatory — Chrome will not offer an audio checkbox for an
+     audio-only display capture request. The video track is stopped immediately
+     afterwards; we only ever wanted the audio. */
+  var stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: {
+      echoCancellation: false, noiseSuppression: false, autoGainControl: true,
+      /* Chrome-specific hints: ask for the raw desktop mixdown, not a processed
+         voice stream. Ignored by browsers that do not understand them. */
+      suppressLocalAudioPlayback: false
+    }
+  });
+
+  stream.getVideoTracks().forEach(function (t) { t.stop(); stream.removeTrack(t); });
+
+  if (stream.getAudioTracks().length === 0) {
+    stream.getTracks().forEach(function (t) { t.stop(); });
+    throw captureError(
+      'That screen share carried no audio track — the "Also share system audio" box was left unchecked.',
+      'Re-run it and: (1) pick the ENTIRE SCREEN tab, not a window or a Chrome tab — a window share never ' +
+      'carries audio; (2) tick "Also share system audio" in the bottom-left of the picker before clicking Share. ' +
+      'On macOS this path cannot work at all: Chrome there can capture tab audio only, never the system mixdown.'
+    );
+  }
+  return stream;
+}
+
+function watchTrackEnd(stream, onEnd) {
+  stream.getAudioTracks().forEach(function (tr) {
+    tr.addEventListener('ended', function () { onEnd(); });
+  });
+}
+
+/* ===================================================================== 9. speech-to-text
+   Both engines implement exactly one interface:
+     start(stream, onFragment) -> stop()
+     onFragment({ text, isFinal, t })
+   Nothing above this line knows which engine is running. */
+
+/* ---------------------------------------------------------- Engine A: Web Speech */
+function WebSpeechEngine() {
+  var Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec = null;
+  var shouldBeRunning = false;      // THE guard: distinguishes "Chrome gave up" from "user stopped"
+  var restartTimer = null;
+  var consecutiveFails = 0;
+  var lastStartAt = 0;
+  var onFrag = null;
+  var fatal = false;
+
+  function spawn() {
+    rec = new Ctor();
+    rec.continuous = true;          // ask for a long session…
+    rec.interimResults = true;      // …and for partial results as they are heard
+    rec.lang = 'en-US';
+    rec.maxAlternatives = 1;
+
+    rec.onstart = function () {
+      lastStartAt = now();
+      sttStatus('listening', 'ok');
+    };
+
+    rec.onresult = function (ev) {
+      consecutiveFails = 0;
+      var interim = '';
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var r = ev.results[i];
+        var txt = r[0] && r[0].transcript ? r[0].transcript : '';
+        if (!txt) continue;
+        if (r.isFinal) onFrag({ text: txt, isFinal: true, t: now() });
+        else interim += txt;
+      }
+      if (interim) onFrag({ text: interim, isFinal: false, t: now() });
+    };
+
+    rec.onerror = function (ev) {
+      var err = ev && ev.error ? ev.error : 'unknown';
+      switch (err) {
+        case 'no-speech':
+          /* Entirely normal — the room went quiet. onend follows and restarts us. */
+          sttStatus('silence', 'warn');
+          break;
+        case 'aborted':
+          /* Usually our own stop() or a restart racing itself. Not an error. */
+          break;
+        case 'audio-capture':
+          consecutiveFails++;
+          sttStatus('no microphone', 'err');
+          toast('Web Speech lost the microphone. Another app may have grabbed it exclusively.', 'err', 8000);
+          break;
+        case 'not-allowed':
+        case 'service-not-allowed':
+          /* Fatal: no amount of restarting fixes a denied permission. */
+          fatal = true; shouldBeRunning = false;
+          sttStatus('permission denied', 'err');
+          toast('Microphone permission was denied. A file:// page cannot remember the grant, so Chrome ' +
+                'asks every time — click Allow, or serve the file over http://localhost.', 'err', 12000);
+          /* Do not keep claiming to be live when the engine is dead. */
+          setTimeout(function () { if (listening) stopListening(); }, 0);
+          break;
+        case 'network':
+          consecutiveFails++;
+          sttStatus('speech service unreachable', 'err');
+          toast('Web Speech could not reach Google\'s speech service — a corporate proxy usually causes this. ' +
+                'Switch the STT engine to local Whisper in Settings.', 'err', 11000);
+          break;
+        default:
+          consecutiveFails++;
+          sttStatus('error: ' + err, 'err');
+      }
+    };
+
+    /* ------------------------------------------------------------------
+       THE RESTART LOOP. This is the single most important block in the file.
+
+       Chrome's SpeechRecognition ends itself after a short silence (and again
+       at a hard internal ceiling) even with continuous = true. It fires onend
+       and simply stops. Without reattaching here the app goes quiet after
+       roughly thirty seconds and never says so — capture appears live, the
+       transcript just stops growing.
+
+       shouldBeRunning is what makes this safe: an intentional stop() clears it
+       first, so a stop cannot be resurrected by the very handler that keeps an
+       accidental end alive.
+       ------------------------------------------------------------------ */
+    rec.onend = function () {
+      if (!shouldBeRunning) return;                       // deliberate stop — stay stopped
+
+      /* If it died almost immediately we are probably in a failure loop
+         (permissions, no device, blocked service). Back off so we do not spin
+         the CPU; otherwise restart essentially instantly to avoid losing words. */
+      var alive = now() - lastStartAt;
+      var delay = alive < 900
+        ? Math.min(10000, 400 * Math.pow(2, Math.min(consecutiveFails, 5)))
+        : 80;
+      if (alive < 900) consecutiveFails++;
+
+      /* A device that has failed this many times in a row is not coming back on
+         its own. Stop, and say so, rather than spinning silently forever. */
+      if (consecutiveFails > 8) {
+        shouldBeRunning = false;
+        sttStatus('gave up after repeated failures', 'err');
+        toast('Speech recognition failed repeatedly and has been stopped. Check the microphone, or ' +
+              'switch the STT engine to local Whisper.', 'err', 12000);
+        setTimeout(function () { if (listening) stopListening(); }, 0);
+        return;
+      }
+
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(function () {
+        if (!shouldBeRunning) return;
+        try {
+          rec.start();
+        } catch (e) {
+          /* InvalidStateError = it was already starting. Rebuild and try again. */
+          try { rec.abort(); } catch (e2) {}
+          spawn();
+          try { rec.start(); } catch (e3) {}
+        }
+      }, delay);
+    };
+  }
+
+  return {
+    name: 'web-speech',
+    /* NOTE: the `stream` argument is deliberately ignored. The Web Speech API opens
+       its own microphone capture internally and cannot be pointed at a MediaStream,
+       which is precisely why it cannot transcribe system/tab audio. */
+    start: function (stream, onFragment) {
+      if (!Ctor) {
+        throw captureError('This browser has no Web Speech API.',
+          'Chrome or Edge is required, or switch the engine to local Whisper.');
+      }
+      onFrag = onFragment;
+      shouldBeRunning = true;
+      fatal = false;
+      consecutiveFails = 0;
+      spawn();
+      try { rec.start(); }
+      catch (e) { sttStatus('could not start: ' + e.message, 'err'); }
+      sttStatus('starting…', 'warn');
+    },
+    stop: function () {
+      shouldBeRunning = false;                            // clear FIRST, before anything can fire onend
+      clearTimeout(restartTimer);
+      if (rec) {
+        rec.onend = null; rec.onerror = null; rec.onresult = null;
+        try { rec.abort(); } catch (e) {}
+      }
+      rec = null;
+      sttStatus('stopped', '');
+    },
+    isFatal: function () { return fatal; }
+  };
+}
+
+/* ---------------------------------------------------- Engine B: local Whisper */
+function WhisperEngine() {
+  var ctx = null, srcNode = null, proc = null, sink = null;
+  var chunks = [], samples = 0, running = false;
+  var pipe = null, busy = false, pending = null, backend = '';
+  var onFrag = null;
+
+  /* Resample arbitrary-rate mono Float32 to the 16 kHz Whisper requires.
+     OfflineAudioContext does the interpolation properly and is the only
+     resampler a plain page gets for free. */
+  async function to16k(float32, srcRate) {
+    if (srcRate === 16000) return float32;
+    var frames = Math.max(1, Math.round(float32.length * 16000 / srcRate));
+    var off = new OfflineAudioContext(1, frames, 16000);
+    var buf = off.createBuffer(1, float32.length, srcRate);
+    buf.copyToChannel(float32, 0);
+    var s = off.createBufferSource();
+    s.buffer = buf; s.connect(off.destination); s.start(0);
+    var rendered = await off.startRendering();
+    return rendered.getChannelData(0);
+  }
+
+  function rms(a) {
+    var sum = 0;
+    for (var i = 0; i < a.length; i += 4) sum += a[i] * a[i];   // every 4th sample is plenty
+    return Math.sqrt(sum / Math.max(1, a.length / 4));
+  }
+
+  async function ensurePipeline() {
+    if (pipe) return pipe;
+    if (!CFG.allowCdn) {
+      throw captureError('The Whisper engine has not been allowed to download.',
+        'Settings → Capture → "Allow the one-off Whisper model download". It is ~40 MB from a public CDN, ' +
+        'cached by the browser afterwards. Nothing about your audio is uploaded — only the model comes down.');
+    }
+    outboundNote('transformers.js + whisper-tiny.en model', TRANSFORMERS_CDN, 'engine-download');
+
+    sttStatus('loading engine…', 'warn');
+    var mod;
+    try {
+      mod = await import(/* one-off engine download */ TRANSFORMERS_CDN);
+    } catch (e) {
+      throw captureError('Could not load the Whisper engine from the CDN.',
+        'A corporate proxy is the usual cause. Switch the STT engine back to Web Speech in Settings — ' +
+        'it needs no download. (' + (e && e.message ? e.message : e) + ')');
+    }
+
+    var pipeline = mod.pipeline, env = mod.env;
+    /* From a file:// page there is no server to serve ./models from, so never look. */
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+    /* Multi-threaded wasm needs SharedArrayBuffer, which needs COOP/COEP headers,
+       which a file:// page cannot have. Force single-threaded rather than let
+       onnxruntime try to spawn workers it will not be allowed to create. */
+    try { env.backends.onnx.wasm.numThreads = 1; } catch (e) {}
+
+    var lastPct = -1;
+    var progress = function (p) {
+      if (p && p.status === 'progress' && typeof p.progress === 'number') {
+        var pct = Math.round(p.progress);
+        if (pct !== lastPct && pct % 5 === 0) {
+          lastPct = pct;
+          sttStatus('downloading model ' + pct + '%', 'warn');
+        }
+      } else if (p && p.status === 'ready') {
+        sttStatus('engine ready', 'ok');
+      }
+    };
+
+    var lastErr = null;
+    for (var i = 0; i < WHISPER_MODELS.length; i++) {
+      var model = WHISPER_MODELS[i];
+      /* WebGPU first — roughly an order of magnitude faster than wasm here.
+         fp32 encoder + q4 decoder is the combination that stays accurate on
+         WebGPU; a full-fp16 whisper encoder is known to lose precision. */
+      if (navigator.gpu) {
+        try {
+          pipe = await pipeline('automatic-speech-recognition', model, {
+            device: 'webgpu',
+            dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+            progress_callback: progress
+          });
+          backend = 'webgpu';
+          sttStatus('whisper ready (webgpu)', 'ok');
+          return pipe;
+        } catch (e) { lastErr = e; }
+      }
+      try {
+        pipe = await pipeline('automatic-speech-recognition', model, {
+          device: 'wasm', dtype: 'q8', progress_callback: progress
+        });
+        backend = 'wasm';
+        sttStatus('whisper ready (wasm)', 'ok');
+        return pipe;
+      } catch (e2) { lastErr = e2; }
+    }
+    throw captureError('Whisper failed to initialise.',
+      (lastErr && lastErr.message) ? lastErr.message : 'Unknown model load failure.');
+  }
+
+  async function transcribe(float32, srcRate, tEnd) {
+    if (busy) {
+      /* Falling behind. Keep only the newest chunk — stale audio is worse than
+         missing audio in a live catch-up tool. */
+      pending = { a: float32, r: srcRate, t: tEnd };
+      sttStatus('behind — dropping older audio', 'warn');
+      return;
+    }
+    busy = true;
+    try {
+      var audio = await to16k(float32, srcRate);
+      var t0 = now();
+      var out = await pipe(audio);
+      var text = (out && (out.text || (out[0] && out[0].text))) || '';
+      text = String(text).trim();
+      if (text && !WHISPER_JUNK.test(text.trim())) {
+        onFrag({ text: text, isFinal: true, t: tEnd });
+        sttStatus('whisper ' + backend + ' · ' + Math.round((now() - t0) / 100) / 10 + 's', 'ok');
+      } else {
+        sttStatus('whisper ' + backend + ' · silence', 'ok');
+      }
+    } catch (e) {
+      sttStatus('transcribe failed: ' + (e && e.message ? e.message : e), 'err');
+    } finally {
+      busy = false;
+      if (pending && running) {
+        var p = pending; pending = null;
+        transcribe(p.a, p.r, p.t);
+      }
+    }
+  }
+
+  function flush(force) {
+    var need = clamp(CFG.chunkSec, 10, 30) * ctx.sampleRate;
+    if (!force && samples < need) return;
+    if (!samples) return;
+
+    var joined = new Float32Array(samples);
+    var off = 0;
+    for (var i = 0; i < chunks.length; i++) { joined.set(chunks[i], off); off += chunks[i].length; }
+    chunks = []; samples = 0;
+
+    /* Silence gate. Whisper hallucinates confidently on silence, and running the
+       model over nothing wastes seconds of CPU we need for real speech. */
+    if (rms(joined) < 0.004) { sttStatus('silence', 'warn'); return; }
+    transcribe(joined, ctx.sampleRate, now());
+  }
+
+  return {
+    name: 'whisper',
+    start: async function (stream, onFragment) {
+      onFrag = onFragment;
+      await ensurePipeline();
+
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
+      srcNode = ctx.createMediaStreamSource(stream);
+
+      /* ScriptProcessorNode, not AudioWorklet, on purpose: AudioWorklet requires
+         audioWorklet.addModule(url), and a file:// page has no URL it is allowed
+         to load a module from — Chrome blocks blob: worklets from an opaque origin.
+         ScriptProcessor is deprecated but works everywhere this app targets. */
+      proc = ctx.createScriptProcessor(4096, 1, 1);
+      proc.onaudioprocess = function (e) {
+        if (!running) return;
+        /* The event's buffer is reused by the engine — copy or it will be overwritten. */
+        var d = e.inputBuffer.getChannelData(0);
+        chunks.push(new Float32Array(d));
+        samples += d.length;
+        flush(false);
+      };
+
+      /* A ScriptProcessor only runs while connected to the destination, so route it
+         through a muted gain node — otherwise the meeting plays back out of the
+         speakers and the microphone hears itself. */
+      sink = ctx.createGain();
+      sink.gain.value = 0;
+      srcNode.connect(proc); proc.connect(sink); sink.connect(ctx.destination);
+
+      running = true;
+      sttStatus('whisper listening (' + backend + ')', 'ok');
+    },
+    stop: function () {
+      running = false;
+      pending = null;
+      try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
+      try { if (srcNode) srcNode.disconnect(); } catch (e) {}
+      try { if (sink) sink.disconnect(); } catch (e) {}
+      try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
+      ctx = null; proc = null; srcNode = null; sink = null;
+      chunks = []; samples = 0;
+      sttStatus('stopped', '');
+    }
+  };
+}
+
+/* ============================================================ 10. capture controller */
+
+var engine = null;
+var listening = false;
+
+/* Web Speech physically cannot consume a getDisplayMedia stream — it opens its own
+   microphone. Rather than silently transcribing the wrong audio, the combination is
+   refused with an explanation. */
+function engineAllowed(engineName, source) {
+  if (engineName === 'webspeech' && source === 'system') {
+    return 'Web Speech only ever listens to the microphone — it cannot be pointed at a captured ' +
+           'system-audio stream. Use the local Whisper engine for system audio, or switch the source back to microphone.';
+  }
+  return '';
+}
+
+async function startListening() {
+  if (listening) return;
+
+  var why = engineAllowed(CFG.engine, CFG.source);
+  if (why) { toast(why, 'err', 10000); openSettings(); return; }
+
+  VIEW.capture = 'starting'; VIEW.captureMsg = 'requesting audio…'; renderSoon();
+
+  try {
+    captureStream = await acquireStream(CFG.source);
+  } catch (e) {
+    VIEW.capture = 'error';
+    VIEW.captureMsg = e && e.name === 'NotAllowedError' ? 'permission denied' : 'capture failed';
+    renderSoon();
+    var msg = (e && e.message) || 'Could not start capture.';
+    if (e && e.name === 'NotAllowedError') {
+      msg = CFG.source === 'system'
+        ? 'Screen share was cancelled, so there is no audio to listen to.'
+        : 'Microphone permission was denied. Chrome cannot remember a grant for a file:// page, so it asks every time.';
+    }
+    toast(msg + (e && e.hint ? '  ' + e.hint : ''), 'err', 13000);
+    return;
+  }
+
+  watchTrackEnd(captureStream, function () {
+    if (!listening) return;
+    toast('The audio source ended — screen sharing was stopped, or the device disappeared.', 'err', 8000);
+    stopListening();
+  });
+
+  engine = CFG.engine === 'whisper' ? WhisperEngine() : WebSpeechEngine();
+  try {
+    await engine.start(captureStream, onFragment);
+  } catch (e) {
+    VIEW.capture = 'error';
+    VIEW.captureMsg = 'engine failed';
+    toast((e && e.message ? e.message : 'The speech engine failed to start.') +
+          (e && e.hint ? '  ' + e.hint : ''), 'err', 14000);
+
+    /* Never leave the app in a broken state because a CDN was unreachable:
+       fall back to the zero-dependency engine and say so. */
+    if (CFG.engine === 'whisper' && CFG.source === 'mic') {
+      toast('Falling back to the Web Speech engine.', 'warn', 7000);
+      CFG.engine = 'webspeech'; saveCfg(); syncSettingsUI();
+      engine = WebSpeechEngine();
+      try { engine.start(captureStream, onFragment); }
+      catch (e2) { stopListening(); renderSoon(); return; }
+    } else {
+      stopListening(); renderSoon(); return;
+    }
+  }
+
+  listening = true;
+  if (!MEET.startedAt) MEET.startedAt = now();
+  VIEW.capture = 'live';
+  VIEW.captureMsg = CFG.source === 'system' ? 'system audio' : 'microphone';
+  renderSoon();
+}
+
+function stopListening() {
+  listening = false;
+  try { if (engine) engine.stop(); } catch (e) {}
+  engine = null;
+  if (captureStream) {
+    captureStream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+    captureStream = null;
+  }
+  VIEW.capture = 'idle'; VIEW.captureMsg = ''; VIEW.interim = '';
+  renderSoon();
+}
+
+/* Single entry point for everything either engine produces. */
+function onFragment(f) {
+  if (!f || !f.text) return;
+  var text = String(f.text).replace(/\s+/g, ' ').trim();
+  if (!text) return;
+
+  if (f.isFinal) {
+    VIEW.interim = '';
+    addFragment(text, f.t || now());
+  } else {
+    VIEW.interim = text;
+  }
+
+  /* FAST LOOP: scan interim text too, so an alert can fire mid-sentence. */
+  scanFragment(text, f.t || now());
+  renderSoon();
+}
+
+/* ============================================================ 11. network choke point
+   EVERY outbound request this page can make goes through outbound(). There is no
+   other fetch() in the file. That makes the network boundary auditable at a glance,
+   and makes `local` mode enforceable rather than aspirational. */
+
+function outboundNote(purpose, url, kind) {
+  var host = '';
+  try { host = new URL(url).host; } catch (e) { host = String(url).slice(0, 40); }
+  var row = { t: now(), purpose: purpose, host: host, state: 'sent', ms: 0, kind: kind || '' };
+  VIEW.netLog.unshift(row);
+  if (VIEW.netLog.length > 60) VIEW.netLog.pop();
+  VIEW.netCount++;
+  renderSoon();
+  return row;
+}
+
+function outboundBlocked(purpose, url) {
+  var host = '';
+  try { host = new URL(url).host; } catch (e) { host = String(url); }
+  VIEW.netLog.unshift({ t: now(), purpose: purpose, host: host, state: 'blocked', ms: 0 });
+  if (VIEW.netLog.length > 60) VIEW.netLog.pop();
+  renderSoon();
+}
+
+/* The one and only fetch() in Spacecadet. */
+async function outbound(url, init, purpose) {
+  if (CFG.backend === 'local') {
+    outboundBlocked(purpose, url);
+    throw new Error('local-only mode: outbound network is disabled');
+  }
+  var row = outboundNote(purpose, url, 'fetch');
+  var t0 = now();
+  try {
+    var res = await fetch(url, init);
+    row.ms = now() - t0;
+    row.state = res.ok ? 'ok' : ('http ' + res.status);
+    renderSoon();
+    return res;
+  } catch (e) {
+    row.ms = now() - t0;
+    row.state = 'failed';
+    renderSoon();
+    throw e;
+  }
+}
+
+/* Opening a claude.ai tab is outbound too — same gate, same log. */
+function openClaudeTab(url) {
+  if (CFG.backend === 'local') { outboundBlocked('open claude.ai', url); return false; }
+  outboundNote('open claude.ai tab', url, 'navigate');
+  try {
+    /* Passing 'noopener' in the features string makes window.open return null by
+       spec, which is indistinguishable from a blocked popup — so open normally and
+       sever the opener reference by hand. */
+    var w = window.open(url, '_blank');
+    if (!w) return false;
+    try { w.opener = null; } catch (e2) {}
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ============================================================ 12. unified state merge
+   api responses AND hand-pasted Claude replies both land here. The renderer never
+   learns which one it was. */
+function applyLLMState(obj, src) {
+  if (!obj || typeof obj !== 'object') return false;
+  var t = now();
+
+  if (obj.topic && String(obj.topic).trim()) {
+    var topic = String(obj.topic).trim();
+    var changed = obj.topic_changed === true || (MEET.llmTopic && normKey(MEET.llmTopic) !== normKey(topic));
+    MEET.llmTopic = topic; MEET.llmAt = t;
+    VIEW.topic = topic; VIEW.topicSrc = 'claude'; VIEW.topicAt = t;
+    if (changed) {
+      pushTimeline(topic, 'claude', t);
+      VIEW.topicChangedAt = t;
+      flashTopicChanged();
+    } else if (!MEET.timeline.length) {
+      pushTimeline(topic, 'claude', t);
+    }
+  }
+
+  if (Array.isArray(obj.bullets) && obj.bullets.length) {
+    MEET.llmBullets = obj.bullets.slice(0, 6).map(String);
+    VIEW.bullets = MEET.llmBullets;
+    VIEW.bulletsSrc = src || 'claude';
+    VIEW.bulletsAt = t;
+  }
+
+  MEET.llmTalkingPoints = Array.isArray(obj.talking_points) ? obj.talking_points.slice(0, 3).map(String) : [];
+
+  addDecisions(obj.decisions);
+  addActions(obj.actions);
+  addGlossary(obj.glossary);
+
+  /* The model is deliberately conservative here; when it does flag the user,
+     it outranks whatever the local regex guessed. */
+  if (obj.user_addressed && typeof obj.user_addressed === 'object') {
+    var ua = obj.user_addressed;
+    fireAlert({
+      kind: ua.kind || 'direct_question',
+      severity: ua.kind === 'mentioned' ? 'soft' : 'hard',
+      who: ua.asked_by || '',
+      question: ua.question || '',
+      at: t,
+      points: MEET.llmTalkingPoints.slice(),
+      src: 'claude'
+    });
+  }
+
+  saveMeeting();
+  renderSoon();
+  return true;
+}
+
+/* ============================================================ 13. backend: api
+   Ambient auto-summary. Optional, costs money, and is the ONLY thing in this app
+   gated behind a key. Incremental: previous state + only what is new. */
+
+var apiInFlight = false;
+var apiFails = 0;
+var lastApiAt = 0;
+
+function apiHeaders() {
+  return {
+    'content-type': 'application/json',
+    'x-api-key': CFG.apiKey,
+    'anthropic-version': '2023-06-01',
+    /* Required for a browser-origin call; without it the API refuses CORS. */
+    'anthropic-dangerous-direct-browser-access': 'true'
+  };
+}
+
+function priceOf(model) { return PRICES[model] || PRICES['claude-sonnet-5']; }
+
+function noteUsage(usage) {
+  if (!usage) return;
+  var p = priceOf(CFG.model);
+  var i = usage.input_tokens || 0, o = usage.output_tokens || 0;
+  MEET.cost.inTok += i;
+  MEET.cost.outTok += o;
+  MEET.cost.calls++;
+  MEET.cost.usd += (i / 1e6) * p.in + (o / 1e6) * p.out;
+  saveMeeting();
+}
+
+/* Everything already reported, so the model can honour "only NEW items". */
+function previousStateBlock() {
+  return {
+    topic: MEET.llmTopic || '(none yet)',
+    bullets_last_reported: (MEET.llmBullets || []).slice(0, 5),
+    decisions_already_reported: MEET.decisions.slice(-15).map(function (d) { return d.text; }),
+    actions_already_reported: MEET.actions.slice(-15).map(function (a) { return a.text; }),
+    glossary_already_reported: MEET.glossary.slice(-25).map(function (g) { return g.term; })
+  };
+}
+
+function transcriptBlock(list, withTimes) {
+  return list.map(function (f) {
+    return withTimes ? ('[' + hhmm(f.t) + '] ' + f.text) : f.text;
+  }).join('\n');
+}
+
+async function callAnthropic(system, userContent, opts) {
+  opts = opts || {};
+  var body = {
+    model: CFG.model,
+    max_tokens: opts.maxTokens || 2000,
+    system: system,
+    output_config: opts.outputConfig || {
+      /* low effort keeps latency down — this is a live loop, not a research task */
+      effort: 'low',
+      format: { type: 'json_schema', schema: RESPONSE_SCHEMA }
+    },
+    messages: [{ role: 'user', content: userContent }]
+  };
+
+  var t0 = now();
+  var res = await outbound(ANTHROPIC_URL, {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify(body)
+  }, opts.purpose || 'ambient summary');
+
+  var latency = now() - t0;
+
+  if (!res.ok) {
+    var detail = '';
+    try { var j = await res.json(); detail = (j && j.error && j.error.message) || ''; }
+    catch (e) { try { detail = await res.text(); } catch (e2) {} }
+    var err = new Error('HTTP ' + res.status + (detail ? ' — ' + detail.slice(0, 220) : ''));
+    err.status = res.status;
+    throw err;
+  }
+
+  var data = await res.json();
+  noteUsage(data.usage);
+  VIEW.api.latency = latency;
+
+  var text = '';
+  if (Array.isArray(data.content)) {
+    for (var i = 0; i < data.content.length; i++) {
+      if (data.content[i] && data.content[i].type === 'text') text += data.content[i].text;
+    }
+  }
+  return { text: text, data: data, latency: latency };
+}
+
+/* Ambient incremental summarisation state machine. */
+async function ambientTick() {
+  if (CFG.backend !== 'api') return;
+  if (!CFG.apiKey) { VIEW.api.state = 'nokey'; return; }
+  if (apiInFlight) return;
+  if (now() < VIEW.api.nextRetryAt) return;
+  if (now() - lastApiAt < CFG.intervalSec * 1000) return;
+
+  var since = MEET.lastSentT || (now() - windowMs());
+  var fresh = fragsSince(since);
+  var words = fresh.reduce(function (n, f) { return n + wordCount(f.text); }, 0);
+
+  /* Silence must cost nothing. Below this the watermark is left alone so the
+     words accumulate into the next tick rather than being thrown away. */
+  if (words < 15) { VIEW.api.state = 'idle'; VIEW.api.msg = 'waiting for speech'; renderSoon(); return; }
+
+  apiInFlight = true;
+  lastApiAt = now();
+  VIEW.api.state = 'calling'; VIEW.api.msg = ''; renderSoon();
+
+  var userContent =
+    'PREVIOUS STATE (yours, from the last call):\n' +
+    JSON.stringify(previousStateBlock(), null, 1) +
+    '\n\nNEW TRANSCRIPT CHUNK (' + hhmm(fresh[0].t) + ' – ' + hhmm(fresh[fresh.length - 1].t) + '):\n' +
+    transcriptBlock(fresh, true);
+
+  try {
+    var out = await callAnthropic(buildSystemPrompt(CFG.profile, CFG.context), userContent, {
+      purpose: 'ambient summary'
+    });
+
+    var parsed = null;
+    try { parsed = JSON.parse(out.text); }
+    catch (e) {
+      /* Be forgiving: pull the first balanced-looking object out of the text. */
+      var m = out.text && out.text.match(/\{[\s\S]*\}/);
+      if (m) { try { parsed = JSON.parse(m[0]); } catch (e2) { parsed = null; } }
+    }
+
+    if (parsed) {
+      applyLLMState(parsed, 'claude');
+      MEET.lastSentT = fresh[fresh.length - 1].t;   // advance the watermark only on success
+      apiFails = 0;
+      VIEW.api.state = 'ok';
+      VIEW.api.msg = '';
+      VIEW.api.nextRetryAt = 0;
+    } else {
+      /* A malformed response is a bad response, not a broken app. Capture keeps running. */
+      apiFails++;
+      VIEW.api.state = 'badjson';
+      VIEW.api.msg = 'unparseable response';
+      scheduleApiRetry();
+    }
+  } catch (e) {
+    apiFails++;
+    VIEW.api.state = 'error';
+    VIEW.api.msg = (e && e.message ? e.message : 'request failed').slice(0, 90);
+    scheduleApiRetry();
+    /* Deliberately a status-bar state, not an alert() — an alert box in the middle
+       of a meeting is worse than the failure it reports. */
+  } finally {
+    apiInFlight = false;
+    renderSoon();
+  }
+}
+
+function scheduleApiRetry() {
+  var wait = Math.min(60000, 2000 * Math.pow(2, Math.min(apiFails, 5)));
+  VIEW.api.nextRetryAt = now() + wait;
+  renderSoon();
+}
+
+/* ============================================================ 14. backend: handoff
+   Free. Builds the prompt, puts it on the clipboard, opens claude.ai. The Pro
+   subscription pays; this page makes no API call. */
+
+function transcriptForHandoff(maxChars) {
+  var all = MEET.frags;
+  var lines = [], chars = 0;
+  for (var i = all.length - 1; i >= 0; i--) {
+    var line = '[' + hhmm(all[i].t) + '] ' + all[i].text;
+    if (chars + line.length > maxChars) break;
+    lines.push(line); chars += line.length + 1;
+  }
+  lines.reverse();
+  var truncated = lines.length < all.length;
+  return { text: lines.join('\n'), truncated: truncated, lines: lines.length, total: all.length };
+}
+
+function buildHandoffPrompt() {
+  var t = transcriptForHandoff(30000);
+  var local = {
+    key_terms: VIEW.chips.map(function (c) { return c.label; }),
+    local_topic_guess: localTopicLabel() || '(none)',
+    meeting_running_for: clockText(now() - (MEET.startedAt || now())),
+    my_name_variants: CFG.names || '(not configured)'
+  };
+
+  return [
+    buildSystemPrompt(CFG.profile, CFG.context),
+    '',
+    '---',
+    '',
+    'You are being pasted into a chat window rather than called through the API, so ignore the JSON',
+    'schema convention and answer in short, readable markdown under exactly these headings:',
+    '',
+    'RIGHT NOW — one line, 3-8 words, what is being discussed at the END of the transcript.',
+    'WHAT I MISSED — 3-5 bullets, most recent first, each under 20 words.',
+    'AM I ON THE HOOK — was ' + (CFG.names || 'the user') + ' asked or assigned anything? If not, say "No." and stop.',
+    'TALKING POINTS — only if the answer above was yes: 2-3 things I could actually say.',
+    'DECISIONS — anything settled. Empty is fine.',
+    'ACTIONS — who owes what. Mark mine.',
+    'JARGON — only genuinely non-obvious acronyms.',
+    '',
+    'SIGNALS FROM THE LOCAL LAYER (crude, ignore if they disagree with the transcript):',
+    JSON.stringify(local, null, 1),
+    '',
+    t.truncated ? '(transcript truncated — showing the most recent portion of the meeting)' : '',
+    'TRANSCRIPT:',
+    t.text || '(nothing captured yet)'
+  ].filter(function (l) { return l !== ''; }).join('\n');
+}
+
+async function copyToClipboard(text) {
+  /* A file:// origin frequently refuses the async clipboard API even inside a
+     user gesture, so both paths are tried and the textarea is always shown. */
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    var ta = $('handoffText');
+    ta.value = text;
+    ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+    return document.execCommand('copy');
+  } catch (e2) { return false; }
+}
+
+async function catchUpHandoff() {
+  var payload = buildHandoffPrompt();
+  var ta = $('handoffText');
+  ta.value = payload;
+  $('handoffLen').textContent = payload.length.toLocaleString() + ' chars · ' +
+    MEET.frags.length.toLocaleString() + ' fragments';
+
+  show('handoffScrim');
+
+  var copied = await copyToClipboard(payload);
+
+  /* claude.ai/new?q= is an UNVERIFIED prefill parameter. It is attempted only for
+     small payloads and the flow never depends on it — the clipboard copy above and
+     the textarea below are the real mechanism. */
+  var url = CLAUDE_NEW;
+  if (payload.length < 6000) url = CLAUDE_NEW + '?q=' + encodeURIComponent(payload);
+  var opened = openClaudeTab(url);
+
+  var st = $('handoffStatus');
+  if (copied && opened) {
+    st.className = 'warn ok';
+    st.innerHTML = '<b>Copied.</b> Paste into the Claude tab that just opened.';
+    toast('Copied. Paste into the Claude tab that just opened.', 'ok', 6000);
+  } else if (copied && !opened) {
+    st.className = 'warn';
+    st.innerHTML = '<b>Copied,</b> but the new tab was blocked — click “Open claude.ai” below, then paste.';
+  } else {
+    st.className = 'warn red';
+    st.innerHTML = '<b>The clipboard write was refused</b> (a <code>file://</code> page often is). ' +
+      'The prompt below is selected — press <b>Ctrl+C</b> to copy it manually.';
+    ta.focus(); ta.select();
+  }
+
+  /* Pre-select regardless, so Ctrl+C always works without hunting. */
+  if (!copied) { ta.focus(); ta.select(); }
+}
+
+/* Lenient parser for a reply pasted back from claude.ai. Accepts the raw JSON or
+   the markdown headings requested above. Feeds the SAME applyLLMState() the api
+   backend uses, so the dashboard cannot tell the difference. */
+function parsePastedReply(text) {
+  if (!text || !text.trim()) return null;
+
+  var m = text.match(/\{[\s\S]*\}/);
+  if (m) {
+    try {
+      var j = JSON.parse(m[0]);
+      if (j && (j.topic || j.bullets)) return j;
+    } catch (e) { /* not JSON, carry on */ }
+  }
+
+  var out = {
+    topic: '', topic_changed: false, bullets: [], user_addressed: null,
+    talking_points: [], decisions: [], actions: [], glossary: []
+  };
+  var section = '';
+  var lines = text.split(/\r?\n/);
+
+  for (var i = 0; i < lines.length; i++) {
+    var raw = lines[i];
+    var line = raw.replace(/^[#>*\-\s]+/, '').trim();
+    if (!line) continue;
+
+    var head = line.replace(/[*_:]/g, '').trim().toUpperCase();
+    if (/^RIGHT NOW\b/.test(head))            { section = 'topic';   line = line.replace(/^[^:]*:\s*/, ''); if (head === 'RIGHT NOW') continue; }
+    else if (/^WHAT I MISSED\b|^RECENT\b/.test(head)) { section = 'bullets'; continue; }
+    else if (/^AM I ON THE HOOK\b/.test(head)){ section = 'hook';    line = line.replace(/^[^:]*:\s*/, ''); if (head === 'AM I ON THE HOOK') continue; }
+    else if (/^TALKING POINTS\b/.test(head))  { section = 'points';  continue; }
+    else if (/^DECISIONS\b/.test(head))       { section = 'dec';     continue; }
+    else if (/^ACTIONS?\b|^ACTION ITEMS\b/.test(head)) { section = 'act'; continue; }
+    else if (/^JARGON\b|^GLOSSARY\b/.test(head)) { section = 'gloss'; continue; }
+
+    var isBullet = /^\s*[-*•]/.test(raw);
+
+    if (section === 'topic' && !out.topic) out.topic = line.slice(0, 90);
+    else if (section === 'bullets' && isBullet) out.bullets.push(line);
+    else if (section === 'points' && isBullet) out.talking_points.push(line);
+    else if (section === 'dec' && isBullet && !/^none\b/i.test(line)) out.decisions.push(line);
+    else if (section === 'act' && isBullet && !/^none\b/i.test(line)) {
+      var mine = /\b(mine|me|my|you|yours)\b/i.test(line) ||
+                 (CFG.names ? new RegExp('\\b(' + CFG.names.split(',').map(function (s) {
+                   return s.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                 }).filter(Boolean).join('|') + ')\\b', 'i').test(line) : false);
+      var owner = '';
+      var om = line.match(/^([A-Z][a-zA-Z.'-]{1,20})\s*[—:-]\s*/);
+      if (om) owner = om[1];
+      out.actions.push({ text: line, owner: owner, mine: mine });
+    }
+    else if (section === 'gloss' && isBullet) {
+      var g = line.split(/\s+[—–:-]\s+/);
+      if (g.length >= 2) out.glossary.push({ term: g[0].trim(), definition: g.slice(1).join(' - ').trim() });
+    }
+    else if (section === 'hook' && !/^no\b\.?$/i.test(line) && line.length > 3) {
+      out.user_addressed = { asked_by: '', question: line, kind: 'direct_question' };
+    }
+  }
+
+  var any = out.topic || out.bullets.length || out.decisions.length || out.actions.length;
+  return any ? out : null;
+}
+
+/* ============================================================ 15. catch me up
+   One button, one hotkey, backend-appropriate behaviour. */
+
+async function catchMeUp() {
+  if (!MEET.frags.length) { toast('Nothing captured yet — start listening first.', 'warn'); return; }
+
+  if (CFG.backend === 'local') {
+    /* No network at all: assemble the answer from the local layer. */
+    show('catchupScrim');
+    $('catchupBody').innerHTML = localCatchupHtml();
+    $('catchupMeta').textContent = 'built locally · no network';
+    return;
+  }
+  if (CFG.backend === 'handoff') return catchUpHandoff();
+
+  /* api: one richer call over the ENTIRE buffer rather than the incremental delta. */
+  if (!CFG.apiKey) { toast('No API key set. Switch to the handoff backend, or add a key in Settings.', 'err'); openSettings(); return; }
+
+  show('catchupScrim');
+  $('catchupBody').innerHTML = '<p style="color:var(--dim)">Asking Claude over the whole meeting…</p>';
+  $('catchupMeta').textContent = CFG.model;
+
+  var t = transcriptForHandoff(60000);
+  var user =
+    'I just tuned back in and need to re-enter the conversation. Answer in short readable markdown under ' +
+    'these headings: RIGHT NOW, WHAT I MISSED, AM I ON THE HOOK, TALKING POINTS, DECISIONS, ACTIONS, JARGON.\n' +
+    'Be blunt and skip anything with nothing to say.\n\n' +
+    (t.truncated ? '(transcript truncated to the most recent portion)\n' : '') +
+    'TRANSCRIPT:\n' + t.text;
+
+  try {
+    var out = await callAnthropic(buildSystemPrompt(CFG.profile, CFG.context), user, {
+      maxTokens: 1600,
+      outputConfig: { effort: 'medium' },      // no schema: prose reads better in a modal
+      purpose: 'catch me up'
+    });
+    $('catchupBody').innerHTML = miniMarkdown(out.text || '(empty response)');
+    $('catchupMeta').textContent = CFG.model + ' · ' + out.latency + 'ms · $' + MEET.cost.usd.toFixed(4) + ' session total';
+    var parsed = parsePastedReply(out.text);
+    if (parsed) applyLLMState(parsed, 'claude');
+  } catch (e) {
+    $('catchupBody').innerHTML = '<p class="warn red" style="margin:0">Catch-up call failed: ' +
+      esc(e && e.message ? e.message : 'unknown error') + '</p>' +
+      '<p style="color:var(--dim);margin-top:10px">Capture is unaffected and still running. ' +
+      'The handoff backend needs no key if you want an answer right now.</p>';
+  }
+}
+
+/* The local-only catch-up: no model, just the buffer presented usefully. */
+function localCatchupHtml() {
+  var w = windowFrags();
+  var chips = VIEW.chips.map(function (c) { return c.label; });
+  var tailTxt = joinFrags(w.slice(-40));
+  var sents = tailTxt.split(/(?<=[.?!])\s+/).filter(function (s) { return wordCount(s) >= 4; });
+
+  var h = [];
+  h.push('<h2>Right now</h2><p><strong>' + esc(localTopicLabel() || 'not enough speech yet') + '</strong></p>');
+  h.push('<h3>Key terms</h3><p>' + (chips.length ? chips.map(esc).join(' · ') : '<em>none yet</em>') + '</p>');
+  h.push('<h3>Last things said</h3><ul>' +
+    (sents.slice(-6).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') || '<li><em>nothing</em></li>') +
+    '</ul>');
+
+  if (MEET.timeline.length) {
+    h.push('<h3>Topics so far</h3><ul>' + MEET.timeline.slice(-10).map(function (x) {
+      return '<li>' + esc(hhmm(x.t)) + ' — ' + esc(x.topic) + '</li>';
+    }).join('') + '</ul>');
+  }
+  if (MEET.alerts.length) {
+    h.push('<h3>Times you were flagged</h3><ul>' + MEET.alerts.slice(-6).map(function (a) {
+      return '<li>' + esc(hhmm(a.t)) + ' — ' + esc(a.question || a.kind) + '</li>';
+    }).join('') + '</ul>');
+  }
+  h.push('<p style="color:var(--dim);font-size:12.5px;margin-top:16px">Built entirely on-device. ' +
+    'Switch the summarizer to <code>handoff</code> for a real Claude answer at no cost.</p>');
+  return h.join('');
+}
+
+/* Tiny markdown renderer — headings, bullets, bold, code. Enough for a modal. */
+function miniMarkdown(src) {
+  var lines = String(src || '').split(/\r?\n/);
+  var out = [], inList = false;
+  function inline(s) {
+    return esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (/^\s*$/.test(l)) { if (inList) { out.push('</ul>'); inList = false; } continue; }
+    var mh = l.match(/^(#{1,6})\s+(.*)$/);
+    var isCaps = /^[A-Z][A-Z \-—’']{3,40}$/.test(l.trim());
+    if (mh || isCaps) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      var lvl = mh ? Math.min(3, mh[1].length + 1) : 3;
+      out.push('<h' + lvl + '>' + inline(mh ? mh[2] : l.trim()) + '</h' + lvl + '>');
+      continue;
+    }
+    if (/^\s*[-*•]\s+/.test(l)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + inline(l.replace(/^\s*[-*•]\s+/, '')) + '</li>');
+      continue;
+    }
+    if (inList) { out.push('</ul>'); inList = false; }
+    out.push('<p>' + inline(l) + '</p>');
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
+/* ===================================================================== 16. status helpers */
+
+var TAIL_SEC = 30;
+var lastStatusMsg = '', lastStatusAt = 0;
+
+function status(msg, kind) {
+  if (msg === lastStatusMsg && (now() - lastStatusAt) < 30000) return;
+  lastStatusMsg = msg; lastStatusAt = now();
+  toast(msg, kind === 'err' ? 'err' : '', 6000);
+}
+function sttStatus(msg, kind) {
+  VIEW.sttMsg = msg;
+  VIEW.sttKind = kind || '';
+  renderSoon();
+}
+function flashTopicChanged() {
+  var z = $('nowZone');
+  z.classList.remove('changed');
+  void z.offsetWidth;                 // force reflow so the animation restarts
+  z.classList.add('changed');
+  $('topicChangedTag').classList.remove('hidden');
+  clearTimeout(flashTopicChanged._t);
+  flashTopicChanged._t = setTimeout(function () {
+    $('topicChangedTag').classList.add('hidden');
+    z.classList.remove('changed');
+  }, 8000);
+}
+
+/* ===================================================================== 17. render
+   Reads VIEW and MEET only. Has no idea which backend produced anything. */
+
+var renderPending = false;
+function renderSoon() {
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(function () { renderPending = false; render(); });
+}
+
+function render() {
+  renderStatusBar();
+  renderNow();
+  renderAlert();
+  renderChips();
+  renderBullets();
+  renderTail();
+  renderPanels();
+  renderNetLog();
+}
+
+function renderStatusBar() {
+  var capDot = $('sbCapDot'), cap = $('sbCap');
+  capDot.className = 'dot' + (VIEW.capture === 'live' ? ' ok live'
+    : VIEW.capture === 'error' ? ' err' : VIEW.capture === 'starting' ? ' warn' : '');
+  cap.textContent = VIEW.capture === 'live'
+    ? (CFG.source === 'system' ? 'system audio' : 'microphone')
+    : (VIEW.capture === 'starting' ? 'starting…' : VIEW.capture);
+
+  var stt = $('sbStt');
+  stt.textContent = (CFG.engine === 'whisper' ? 'whisper' : 'web-speech') +
+    (VIEW.sttMsg ? ' · ' + VIEW.sttMsg : '');
+  stt.style.color = VIEW.sttKind === 'err' ? 'var(--rd)'
+    : (VIEW.sttKind === 'warn' ? 'var(--am)' : '');
+  $('sbBackend').textContent = CFG.backend;
+
+  var netDot = $('sbNetDot'), net = $('sbNet');
+  if (CFG.backend === 'local') {
+    netDot.className = 'dot ok';
+    net.textContent = 'outbound disabled · ' + VIEW.netLog.filter(function (r) { return r.state === 'blocked'; }).length + ' blocked';
+  } else if (VIEW.netCount === 0) {
+    netDot.className = 'dot';
+    net.textContent = 'no outbound calls yet';
+  } else {
+    var bad = VIEW.api.state === 'error' || VIEW.api.state === 'badjson';
+    netDot.className = 'dot ' + (bad ? 'err' : 'ok');
+    net.textContent = VIEW.netCount + ' outbound';
+  }
+
+  var isApi = CFG.backend === 'api';
+  $('sbApiWrap').classList.toggle('hidden', !isApi);
+  $('sbCostWrap').classList.toggle('hidden', !isApi);
+  if (isApi) {
+    var s = VIEW.api.state, txt;
+    if (s === 'nokey') txt = 'no key';
+    else if (s === 'calling') txt = 'calling…';
+    else if (s === 'error') txt = 'retry in ' + Math.max(0, Math.round((VIEW.api.nextRetryAt - now()) / 1000)) + 's — ' + VIEW.api.msg;
+    else if (s === 'badjson') txt = 'bad response — retrying';
+    else if (VIEW.api.latency) txt = VIEW.api.latency + 'ms · ' + MEET.cost.calls + ' calls';
+    else txt = 'idle';
+    $('sbApi').textContent = txt;
+    $('sbCost').textContent = '$' + MEET.cost.usd.toFixed(4);
+  }
+
+  var wc = 0, wf = windowFrags();
+  for (var i = 0; i < wf.length; i++) wc += wordCount(wf[i].text);
+  $('sbBuf').textContent = wc + 'w / ' + CFG.windowMin + 'm';
+  $('sbClock').textContent = MEET.startedAt ? clockText(now() - MEET.startedAt) : '00:00';
+}
+
+function renderNow() {
+  var t = $('topic'), meta = $('topicMeta'), src = $('topicSrc');
+  if (VIEW.topic) {
+    t.textContent = VIEW.topic;
+    t.classList.remove('idle');
+    src.textContent = VIEW.topicSrc === 'claude' ? 'claude' : 'local';
+    src.className = 'srcTag ' + (VIEW.topicSrc === 'claude' ? 'claude' : 'local');
+    src.classList.remove('hidden');
+    meta.textContent = 'updated ' + agoText(VIEW.topicAt) +
+      (VIEW.topicSrc === 'local' ? ' · derived on-device from the last ' + CFG.windowMin + ' min' : '');
+  } else {
+    t.classList.add('idle');
+    src.classList.add('hidden');
+    if (VIEW.capture === 'live') {
+      t.textContent = 'Listening…';
+      meta.textContent = 'Waiting for enough speech to name a topic.';
+    } else {
+      t.textContent = 'Not listening yet';
+      meta.innerHTML = 'Press <span class="kbd">L</span> or click “Start listening”. No API key needed.';
+    }
+  }
+}
+
+function renderAlert() {
+  var z = $('alertZone');
+  var a = VIEW.alert;
+
+  if (a && (now() - a.at) > CFG.alertTtlSec * 1000) { VIEW.alert = null; a = null; }
+  if (!a) { z.classList.add('hidden'); return; }
+
+  z.classList.remove('hidden');
+  z.classList.toggle('soft', a.severity !== 'hard');
+
+  var title;
+  if (a.kind === 'direct_question')      title = a.who ? (a.who.toUpperCase() + ' ASKED YOU SOMETHING') : 'YOU WERE ASKED SOMETHING';
+  else if (a.kind === 'assigned')        title = a.who ? (a.who.toUpperCase() + ' ASSIGNED YOU SOMETHING') : 'SOMETHING WAS ASSIGNED TO YOU';
+  else if (a.kind === 'mentioned')       title = 'YOUR NAME WAS SAID';
+  else                                   title = 'AN OPEN QUESTION WAS ASKED';
+  $('alertKind').textContent = title;
+  $('alertAgo').textContent = agoText(a.at);
+
+  var q = a.question || '(nothing captured)';
+  $('alertQ').innerHTML = highlightNames(q);
+
+  var ul = $('alertPoints');
+  ul.innerHTML = '';
+  (a.points || []).forEach(function (p) {
+    var li = document.createElement('li');
+    li.textContent = p;
+    ul.appendChild(li);
+  });
+
+  $('alertSrc').textContent = (a.src === 'claude' ? 'flagged by Claude' : 'local match: ' + (a.matched || 'pattern')) +
+    (a.pointsAre ? ' · ' + a.pointsAre : '');
+}
+
+function highlightNames(s) {
+  var out = esc(s);
+  var re = buildNameRegex();
+  if (re) {
+    var g = new RegExp(re.source, 'gi');
+    out = out.replace(g, function (m) { return '<em>' + m + '</em>'; });
+  }
+  return out;
+}
+
+function renderChips() {
+  var box = $('chips');
+  if (!VIEW.chips.length) {
+    box.innerHTML = '<span class="chipEmpty">' +
+      (VIEW.capture === 'live' ? 'listening…' : 'waiting for speech…') + '</span>';
+    return;
+  }
+  var max = VIEW.chips[0].score || 1;
+  box.innerHTML = VIEW.chips.map(function (c) {
+    var hot = c.score > max * 0.6 ? ' hot' : '';
+    return '<span class="chip' + hot + '">' + esc(c.label) + '<span class="n">' + c.n + '</span></span>';
+  }).join('');
+}
+
+function renderBullets() {
+  var card = $('bulletsCard');
+  if (!VIEW.bullets || !VIEW.bullets.length) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  $('bulletsSrc').textContent = (VIEW.bulletsSrc || 'claude') + ' · ' + agoText(VIEW.bulletsAt);
+  $('bullets').innerHTML = VIEW.bullets.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('');
+}
+
+function renderTail() {
+  var box = $('tail');
+  $('tailSecs').textContent = TAIL_SEC;
+  var cut = now() - TAIL_SEC * 1000;
+  var recent = MEET.frags.filter(function (f) { return f.t >= cut; });
+
+  /* Keep something on screen during a pause rather than blanking the most
+     valuable panel in the app. */
+  if (!recent.length && MEET.frags.length) recent = MEET.frags.slice(-4);
+
+  if (!recent.length && !VIEW.interim) {
+    box.innerHTML = '<span id="tailEmpty">' +
+      (VIEW.capture === 'live' ? 'Listening — nothing transcribed yet.' : 'Nothing captured yet.') + '</span>';
+    return;
+  }
+
+  var oldCut = now() - 15000;
+  var html = recent.map(function (f) {
+    return '<span class="' + (f.t < oldCut ? 'old' : '') + '">' + highlightNames(f.text) + ' </span>';
+  }).join('');
+  if (VIEW.interim) html += '<span class="interim">' + highlightNames(VIEW.interim) + '</span>';
+
+  box.innerHTML = html;
+  box.scrollTop = box.scrollHeight;
+
+  $('tailStatus').textContent = VIEW.capture === 'live'
+    ? (VIEW.interim ? 'hearing…' : (CFG.engine === 'whisper' ? 'block every ' + CFG.chunkSec + 's' : 'live'))
+    : 'paused';
+}
+
+function renderPanels() {
+  setCount('cDecisions', MEET.decisions.length);
+  $('lDecisions').innerHTML = MEET.decisions.length
+    ? MEET.decisions.slice().reverse().map(function (d) {
+        return '<li>' + esc(d.text) + '<span class="who">' + hhmm(d.t) + '</span></li>'; }).join('')
+    : '<li class="none">None yet.</li>';
+
+  setCount('cActions', MEET.actions.length);
+  $('lActions').innerHTML = MEET.actions.length
+    ? MEET.actions.slice().reverse().map(function (a) {
+        return '<li class="' + (a.mine ? 'mine' : '') + '">' + esc(a.text) +
+          '<span class="who">' + (a.mine ? 'MINE' : (a.owner ? esc(a.owner) : 'unassigned')) + '</span></li>';
+      }).join('')
+    : '<li class="none">None yet.</li>';
+
+  setCount('cTimeline', MEET.timeline.length);
+  $('lTimeline').innerHTML = MEET.timeline.length
+    ? MEET.timeline.slice().reverse().map(function (x) {
+        return '<li class="tlRow"><span class="tm">' + hhmm(x.t) + '</span><span>' + esc(x.topic) + '</span></li>';
+      }).join('')
+    : '<li class="none">Nothing yet.</li>';
+
+  setCount('cGlossary', MEET.glossary.length);
+  $('lGlossary').innerHTML = MEET.glossary.length
+    ? MEET.glossary.map(function (g) {
+        return '<li><span class="glossTerm">' + esc(g.term) + '</span> — ' + esc(g.definition) + '</li>'; }).join('')
+    : '<li class="none">None yet.</li>';
+}
+function setCount(id, n) {
+  var el = $(id);
+  el.textContent = n;
+  el.classList.toggle('zero', n === 0);
+}
+
+function renderNetLog() {
+  setCount('cNet', VIEW.netLog.length);
+  var box = $('lNet');
+  if (!VIEW.netLog.length) { box.innerHTML = '<div class="netLogRow">no outbound requests</div>'; return; }
+  box.innerHTML = VIEW.netLog.slice(0, 25).map(function (r) {
+    var cls = r.state === 'blocked' ? 'blk' : (r.state === 'ok' ? 'ok' : (r.state === 'sent' ? '' : 'bad'));
+    return '<div class="netLogRow"><span>' + hhmm(r.t) + '</span>' +
+      '<span class="' + cls + '">' + esc(r.state) + '</span>' +
+      '<span>' + esc(r.host) + '</span>' +
+      '<span style="opacity:.7">' + esc(r.purpose) + (r.ms ? ' · ' + r.ms + 'ms' : '') + '</span></div>';
+  }).join('');
+}
+
+/* ===================================================================== 18. modals */
+
+function show(id) { $(id).classList.remove('hidden'); }
+function hide(id) { $(id).classList.add('hidden'); }
+
+/* ===================================================================== 19. export */
+
+function exportMarkdown() {
+  var started = MEET.startedAt || now();
+  var L = [];
+  L.push('# Meeting notes — ' + new Date(started).toLocaleString());
+  L.push('');
+  L.push('_Captured with Spacecadet · ' + clockText(now() - started) + ' · ' +
+         MEET.frags.length + ' transcript fragments · summarizer: ' + CFG.backend + '_');
+  if (CFG.backend === 'api' && MEET.cost.calls) {
+    L.push('_' + MEET.cost.calls + ' API calls · ' + MEET.cost.inTok + ' in / ' + MEET.cost.outTok +
+           ' out tokens · $' + MEET.cost.usd.toFixed(4) + '_');
+  }
+  L.push('');
+
+  if (CFG.context && CFG.context.trim()) { L.push('## Pre-meeting context'); L.push(CFG.context.trim()); L.push(''); }
+
+  L.push('## Topic timeline');
+  L.push(MEET.timeline.length
+    ? MEET.timeline.map(function (x) { return '- **' + hhmm(x.t) + '** — ' + x.topic + ' _(' + x.src + ')_'; }).join('\n')
+    : '_none recorded_');
+  L.push('');
+
+  L.push('## Decisions');
+  L.push(MEET.decisions.length
+    ? MEET.decisions.map(function (d) { return '- ' + d.text + ' _(' + hhmm(d.t) + ')_'; }).join('\n')
+    : '_none recorded_');
+  L.push('');
+
+  L.push('## Action items');
+  if (MEET.actions.length) {
+    var mine = MEET.actions.filter(function (a) { return a.mine; });
+    var other = MEET.actions.filter(function (a) { return !a.mine; });
+    if (mine.length) {
+      L.push('### Mine');
+      L.push(mine.map(function (a) { return '- [ ] ' + a.text; }).join('\n'));
+      L.push('');
+    }
+    if (other.length) {
+      L.push('### Others');
+      L.push(other.map(function (a) { return '- ' + (a.owner ? '**' + a.owner + '** — ' : '') + a.text; }).join('\n'));
+    }
+  } else L.push('_none recorded_');
+  L.push('');
+
+  L.push('## Glossary');
+  L.push(MEET.glossary.length
+    ? MEET.glossary.map(function (g) { return '- **' + g.term + '** — ' + g.definition; }).join('\n')
+    : '_none recorded_');
+  L.push('');
+
+  if (MEET.alerts.length) {
+    L.push('## Times you were flagged');
+    L.push(MEET.alerts.map(function (a) {
+      return '- **' + hhmm(a.t) + '** (' + a.kind + ') ' + (a.question || ''); }).join('\n'));
+    L.push('');
+  }
+
+  L.push('## Transcript');
+  L.push('');
+  L.push('> Machine transcription. Expect misheard words and no speaker labels.');
+  L.push('');
+  L.push(MEET.frags.map(function (f) { return '**' + hhmm(f.t) + '** ' + f.text; }).join('\n\n') || '_empty_');
+  L.push('');
+
+  var blob = new Blob([L.join('\n')], { type: 'text/markdown;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var d = new Date(started), p = function (n) { return (n < 10 ? '0' : '') + n; };
+  var name = 'spacecadet-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+             '-' + p(d.getHours()) + p(d.getMinutes()) + '.md';
+
+  var a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+  toast('Exported ' + name, 'ok');
+}
+
+/* ===================================================================== 20. while you were away */
+
+var awayAt = 0, awayTimelineLen = 0, awayAlertsLen = 0;
+
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') {
+    awayAt = now();
+    awayTimelineLen = MEET.timeline.length;
+    awayAlertsLen = MEET.alerts.length;
+    return;
+  }
+  if (!awayAt) return;
+  var gone = now() - awayAt;
+  awayAt = 0;
+  if (gone < 20000) return;                       // a flick to another tab is not "away"
+
+  var newTopics = MEET.timeline.slice(awayTimelineLen);
+  var newAlerts = MEET.alerts.slice(awayAlertsLen);
+  if (!newTopics.length && !newAlerts.length) return;
+
+  var bits = [];
+  bits.push('<b>While you were away</b> (' + clockText(gone) + ')');
+  if (newTopics.length) {
+    bits.push(newTopics.length + ' topic' + (newTopics.length > 1 ? 's' : '') + ' changed: ' +
+      newTopics.map(function (x) { return '<b>' + esc(x.topic) + '</b>'; }).join(' → '));
+  }
+  if (newAlerts.length) {
+    bits.push('<b>' + newAlerts.length + '</b> time' + (newAlerts.length > 1 ? 's' : '') + ' you were flagged');
+  }
+  $('awayText').innerHTML = bits.join(' · ');
+  $('away').classList.remove('hidden');
+});
+
+/* ===================================================================== 21. discreet + panic */
+
+function setDiscreet(on) {
+  CFG.discreet = !!on;
+  document.body.classList.toggle('discreet', CFG.discreet);
+  $('btnDiscreet').textContent = CFG.discreet ? '◑ Normal' : '◐ Discreet';
+  saveCfg();
+}
+
+var panicked = false, titleBefore = document.title;
+function togglePanic() {
+  panicked = !panicked;
+  document.body.classList.toggle('panic', panicked);
+  if (panicked) { titleBefore = document.title; document.title = 'Document1'; }
+  else { document.title = titleBefore; }
+}
+
+/* ===================================================================== 22. settings UI */
+
+function openSettings() { document.body.classList.add('settingsOpen'); }
+function closeSettings() { document.body.classList.remove('settingsOpen'); }
+
+function syncSettingsUI() {
+  $('setBackend').value = CFG.backend;
+  $('setKey').value = CFG.apiKey;
+  $('setModel').value = CFG.model;
+  $('setInterval').value = CFG.intervalSec; $('setIntervalVal').textContent = CFG.intervalSec;
+  $('setSource').value = CFG.source;
+  $('setEngine').value = CFG.engine;
+  $('setAllowCdn').checked = !!CFG.allowCdn;
+  $('setChunk').value = CFG.chunkSec; $('setChunkVal').textContent = CFG.chunkSec;
+  $('setNames').value = CFG.names;
+  $('setQPatterns').checked = !!CFG.qPatterns;
+  $('setChime').checked = !!CFG.chime;
+  $('setAlertTtl').value = CFG.alertTtlSec; $('setAlertTtlVal').textContent = CFG.alertTtlSec;
+  $('setWindow').value = CFG.windowMin; $('setWindowVal').textContent = CFG.windowMin;
+  $('setTopicTh').value = CFG.topicTh; $('setTopicThVal').textContent = Number(CFG.topicTh).toFixed(2);
+  $('setProfile').value = CFG.profile;
+  $('setContext').value = CFG.context;
+
+  /* api-only controls are hidden entirely from someone who will never use a key */
+  $('apiFset').classList.toggle('hidden', CFG.backend !== 'api');
+
+  var p = priceOf(CFG.model);
+  $('priceHint').textContent = p.label + ' — $' + p.in.toFixed(2) + ' per 1M input tokens, $' +
+    p.out.toFixed(2) + ' per 1M output. A typical ambient call is a few thousand input tokens.';
+
+  $('backendHint').innerHTML = {
+    handoff: 'Free. “Catch me up” copies a prompt and opens claude.ai — <b>your Pro subscription pays</b>. ' +
+             'This page makes no API call. The live dashboard runs entirely on the local layer.',
+    api:     'Costs money. Adds the ambient auto-summary every ' + CFG.intervalSec + 's. Everything else works ' +
+             'the same without it.',
+    local:   'Nothing leaves the machine — the outbound choke point is hard-disabled and every blocked ' +
+             'attempt is logged. The single exception is the one-off Whisper engine download, which stays ' +
+             'blocked unless you tick its box below.' +
+             (CFG.engine === 'webspeech'
+               ? ' <b>But the Web Speech engine still streams your audio to Google.</b> Switch the STT engine ' +
+                 'to local Whisper for genuine on-device operation.'
+               : '')
+  }[CFG.backend];
+
+  var why = engineAllowed(CFG.engine, CFG.source);
+  $('engineHint').innerHTML = why
+    ? '<span style="color:var(--am)"><b>Unavailable with this source.</b> ' + why + '</span>'
+    : (CFG.engine === 'whisper'
+        ? 'Runs the model in this tab — <b>audio never leaves the machine</b>. Transcript quality is mediocre; ' +
+          'that is expected and Claude compensates. Needs the one-off download below.'
+        : '<b>Sends audio to Google\'s speech service</b> for recognition. Microphone only — it cannot ' +
+          'transcribe a captured system-audio stream.');
+
+  $('sourceHint').innerHTML = CFG.source === 'system'
+    ? 'Windows + Chrome: share the <b>entire screen</b> and tick <b>“Also share system audio”</b>. A window ' +
+      'share carries no audio. macOS cannot capture system audio at all — tab audio only.'
+    : 'Hears the room and whatever comes out of your speakers. Echo cancellation is forced off so the ' +
+      'meeting audio is not suppressed.';
+
+  /* Make the impossible combination visibly impossible rather than silently ignored. */
+  var opt = $('setEngine').querySelector('option[value="webspeech"]');
+  if (opt) {
+    opt.disabled = CFG.source === 'system';
+    opt.textContent = CFG.source === 'system'
+      ? 'Web Speech — unavailable with system audio'
+      : 'Web Speech — instant, no download, microphone only';
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#backendSwitch .seg'), function (b) {
+    b.classList.toggle('on', b.getAttribute('data-b') === CFG.backend);
+  });
+}
+
+function bindSettings() {
+  function on(id, ev, fn) { $(id).addEventListener(ev, fn); }
+
+  on('setBackend', 'change', function () { setBackend(this.value); });
+  on('setKey', 'input', function () { CFG.apiKey = this.value.trim(); saveCfg(); renderSoon(); });
+  on('setModel', 'change', function () { CFG.model = this.value; saveCfg(); syncSettingsUI(); });
+  on('setInterval', 'input', function () {
+    CFG.intervalSec = +this.value; $('setIntervalVal').textContent = CFG.intervalSec; saveCfg(); });
+  on('setSource', 'change', function () {
+    CFG.source = this.value;
+    /* Selecting system audio makes Web Speech impossible — move the user rather
+       than leaving an invalid pair selected. */
+    if (CFG.source === 'system' && CFG.engine === 'webspeech') {
+      CFG.engine = 'whisper';
+      toast('Switched to the Whisper engine — Web Speech cannot transcribe system audio.', 'warn', 8000);
+    }
+    saveCfg(); syncSettingsUI();
+    if (listening) toast('Restart listening for the new source to take effect.', 'warn');
+  });
+  on('setEngine', 'change', function () {
+    CFG.engine = this.value; saveCfg(); syncSettingsUI();
+    if (listening) toast('Restart listening for the new engine to take effect.', 'warn');
+  });
+  on('setAllowCdn', 'change', function () { CFG.allowCdn = this.checked; saveCfg(); });
+  on('setChunk', 'input', function () {
+    CFG.chunkSec = +this.value; $('setChunkVal').textContent = CFG.chunkSec; saveCfg(); });
+  on('setNames', 'input', function () { CFG.names = this.value; saveCfg(); buildNameRegex(); renderSoon(); });
+  on('setQPatterns', 'change', function () { CFG.qPatterns = this.checked; saveCfg(); });
+  on('setChime', 'change', function () { CFG.chime = this.checked; saveCfg(); if (this.checked) chime('hard'); });
+  on('setAlertTtl', 'input', function () {
+    CFG.alertTtlSec = +this.value; $('setAlertTtlVal').textContent = CFG.alertTtlSec; saveCfg(); });
+  on('setWindow', 'input', function () {
+    CFG.windowMin = +this.value; $('setWindowVal').textContent = CFG.windowMin; saveCfg(); renderSoon(); });
+  on('setTopicTh', 'input', function () {
+    CFG.topicTh = +this.value; $('setTopicThVal').textContent = Number(CFG.topicTh).toFixed(2); saveCfg(); });
+  on('setProfile', 'input', function () { CFG.profile = this.value; saveCfg(); });
+  on('setContext', 'input', function () { CFG.context = this.value; saveCfg(); });
+
+  on('btnWipe', 'click', function () {
+    if (!confirm('Erase all Spacecadet settings and the stored meeting from this browser?')) return;
+    try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem(MEETING_KEY); } catch (e) {}
+    location.reload();
+  });
+  on('settingsClose', 'click', closeSettings);
+}
+
+function setBackend(b) {
+  CFG.backend = b;
+  saveCfg();
+  syncSettingsUI();
+  renderSoon();
+  if (b === 'api' && !CFG.apiKey) {
+    openSettings();
+    toast('The api backend needs a key. Everything else works without one.', 'warn', 7000);
+  }
+  if (b === 'local' && CFG.engine === 'webspeech') {
+    toast('Local-only summarizer selected, but the Web Speech engine still sends audio to Google. ' +
+          'Switch the STT engine to Whisper for true on-device operation.', 'warn', 11000);
+  }
+  if (b === 'handoff') {
+    toast('Handoff mode: catch-me-up copies a prompt and opens claude.ai. No key, no cost.', 'ok', 5000);
+  }
+}
+
+/* ===================================================================== 23. wiring */
+
+function bindUI() {
+  $('btnStart').addEventListener('click', startListening);
+  $('btnStop').addEventListener('click', stopListening);
+  $('btnCatchup').addEventListener('click', catchMeUp);
+  $('btnSettings').addEventListener('click', function () {
+    document.body.classList.toggle('settingsOpen');
+  });
+  $('btnExport').addEventListener('click', exportMarkdown);
+  $('btnDiscreet').addEventListener('click', function () { setDiscreet(!CFG.discreet); });
+  $('btnNew').addEventListener('click', function () {
+    if (!confirm('Clear this meeting — transcript, decisions, actions, timeline — and start a new one?')) return;
+    resetMeeting();
+    toast('New meeting started.', 'ok');
+    renderSoon();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#backendSwitch .seg'), function (b) {
+    b.addEventListener('click', function () { setBackend(b.getAttribute('data-b')); });
+  });
+
+  $('alertDismiss').addEventListener('click', dismissAlert);
+  $('alertCatchup').addEventListener('click', catchMeUp);
+  $('awayClose').addEventListener('click', function () { $('away').classList.add('hidden'); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function (b) {
+    b.addEventListener('click', function () { hide(b.getAttribute('data-close')); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.scrim'), function (s) {
+    s.addEventListener('click', function (e) { if (e.target === s) s.classList.add('hidden'); });
+  });
+
+  $('handoffCopy').addEventListener('click', async function () {
+    var ok = await copyToClipboard($('handoffText').value);
+    toast(ok ? 'Copied again.' : 'Clipboard refused — the text is selected, press Ctrl+C.', ok ? 'ok' : 'err');
+  });
+  $('handoffOpen').addEventListener('click', function () {
+    if (!openClaudeTab(CLAUDE_NEW)) toast('Blocked — local-only mode has outbound navigation disabled.', 'err');
+  });
+  $('handoffApply').addEventListener('click', function () {
+    var parsed = parsePastedReply($('handoffReply').value);
+    if (!parsed) { toast('Could not read that reply. Paste Claude\'s full answer, or its raw JSON.', 'err'); return; }
+    applyLLMState(parsed, 'claude (pasted)');
+    hide('handoffScrim');
+    toast('Dashboard updated from the pasted reply.', 'ok');
+  });
+
+  /* --------------------------------------------------------- hotkeys */
+  window.addEventListener('keydown', function (e) {
+    /* Esc is the panic key and must work from anywhere, including a text field. */
+    if (e.key === 'Escape') { e.preventDefault(); togglePanic(); return; }
+    if (panicked) return;
+
+    var tag = (e.target && e.target.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    switch (e.key.toLowerCase()) {
+      case 'c': e.preventDefault(); catchMeUp(); break;
+      case 'l': e.preventDefault(); listening ? stopListening() : startListening(); break;
+      case 's': e.preventDefault(); document.body.classList.toggle('settingsOpen'); break;
+      case 'd': e.preventDefault(); dismissAlert(); break;
+      case 'e': e.preventDefault(); exportMarkdown(); break;
+      case 'v': e.preventDefault(); setDiscreet(!CFG.discreet); break;
+    }
+  });
+
+  window.addEventListener('beforeunload', function () { doSaveMeeting(); });
+}
+
+/* ===================================================================== 24. main loop */
+
+function tick() {
+  if (listening) recomputeLocal();
+
+  /* Ambient summarisation is the only thing that ever costs money, and it is
+     rate-limited, word-gated and backend-gated before it can spend anything. */
+  if (listening && CFG.backend === 'api') ambientTick();
+
+  $('btnStart').classList.toggle('hidden', listening);
+  $('btnStop').classList.toggle('hidden', !listening);
+
+  if (document.visibilityState === 'visible') render();
+}
+
+/* ===================================================================== 25. init */
+
+function init() {
+  syncSettingsUI();
+  bindSettings();
+  bindUI();
+  setDiscreet(CFG.discreet);
+  buildNameRegex();
+
+  var restored = restoreMeeting();
+  if (restored) {
+    VIEW.topic = MEET.llmTopic || '';
+    VIEW.topicSrc = MEET.llmTopic ? 'claude' : 'local';
+    VIEW.topicAt = MEET.llmAt || now();
+    VIEW.bullets = MEET.llmBullets || [];
+    VIEW.bulletsAt = MEET.llmAt || 0;
+    recomputeLocal();
+    toast('Restored the meeting in progress — ' + MEET.frags.length + ' fragments, ' +
+          clockText(now() - MEET.startedAt) + ' elapsed.', 'ok', 7000);
+  }
+
+  if (!CFG.names) {
+    toast('Add your name variants in Settings — the name alert is the fastest thing in this app and it ' +
+          'needs to know what you are called.', 'warn', 11000);
+  }
+
+  render();
+  setInterval(tick, 500);
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+
+})();
+
+</script>
+</body>
+</html>
