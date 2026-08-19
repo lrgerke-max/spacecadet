@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spacecadet</title>
+<title>Recap — meeting assistant</title>
 <!--
   SPACECADET — meeting attention assistant. Single file, no build step, runs from file://.
 
@@ -35,578 +35,477 @@
 -->
 <style>
 /* =============================================================================
-   COCKPIT THEME — the inside of an X-wing, taken from reference photography.
+   STRETY-ALIGNED THEME, BUILT FOR A ONE-THIRD-SCREEN COLUMN
 
-   What the references actually show, and what this stylesheet copies:
-     * MID-GREY hull panels, not black. Battleship grey, weathered, with darker
-       recessed seams between plates.
-     * White scribed line-work — thin outline rectangles and vertical bars ruled
-       straight onto the panel faces.
-     * Thin SALMON-ORANGE outline boxes framing regions of the side consoles.
-     * Grids of small illuminated square keys in red / green / blue.
-     * A horizontal row of tiny round LEDs across the coaming, mostly white with
-       an occasional orange or red one.
-     * AMBER recessed screens in black bezels. Amber, not green — green phosphor
-       is a different ship entirely.
-     * Canted trapezoid side consoles, knurled knobs, grime streaks.
+   Taken from screenshots of the association's own Strety instance so this sits
+   beside it in a Level 10 without looking like a different species of software:
+     * dark charcoal top nav, sentence case, no letter-spacing theatrics
+     * light grey page, white cards, 8px radius, hairline borders, faint shadow
+     * one orange primary action; everything else is quiet
+     * the signature multicolour bar (pink / amber / cyan / purple / green)
+     * agenda segments as coloured pills with timeboxes on the right
 
-   The one structural idea that makes this work as a dashboard: grey hull is used
-   for CHROME ONLY — status strip, switch panel, rails, bezels. Every surface that
-   carries content is a dark screen recessed into that hull. That is how the real
-   cockpit is built, and it keeps the reading surfaces high-contrast, which is the
-   entire point of the app.
+   LAYOUT TARGET: a column roughly one third of a 1920px screen (~600px), docked
+   beside Strety and Teams. Everything is single-column and vertical; the design
+   holds from 380px to full width. Vertical space is the scarce resource, so the
+   transcript takes whatever is left and everything else is sized to get out of
+   its way.
 
-   Cheap on purpose: this repaints twice a second for hours on a locked-down
-   laptop. No backdrop-filter, no filter on repainting nodes, no animated
-   box-shadow on large surfaces. Motion is transform/opacity only, and
-   prefers-reduced-motion turns all of it off.
-
-   The panic screen is deliberately NOT themed. It stays a plain white document,
-   because it is the one screen someone else might see.
+   Type is sentence case throughout. The previous cockpit theme is in git history
+   if it is ever wanted back.
    ============================================================================= */
 
   :root{
-    /* ---- hull (chrome only) */
-    --void:#080a0c;         /* past the canopy */
-    --hull:#575e63;         /* panel face — mid grey */
-    --hull-lt:#79807f;      /* lit / raised plate */
-    --hull-hi:#98a0a3;      /* bevel highlight */
-    --hull-dk:#3c4247;      /* recessed plate */
-    --seam:#15181b;         /* deep seam between plates */
-    --scribe:#b9c2c6;       /* white line-work */
-    --org:#e8703f;          /* salmon-orange console outline */
+    /* surfaces */
+    --nav:#17171c;          /* top nav, matching Strety's charcoal */
+    --nav-2:#25252d;
+    --bg:#f6f6f7;           /* page */
+    --card:#ffffff;
+    --line:#e6e6e9;         /* hairline border */
+    --line-2:#f0f0f2;       /* inner divider */
+    --hover:#f9f9fa;
 
-    /* ---- screens (content) */
-    --screen:#0d0f11;       /* recessed screen ground */
-    --screen2:#121517;
+    /* text */
+    --txt:#1e1f24;
+    --txt-2:#6b7280;
+    --txt-3:#9aa0a6;
+    --nav-txt:#e8e8ea;
 
-    /* ---- lamps */
-    --am:#ffab3d;           /* amber — primary readout + annunciator */
-    --am2:#ffd08a;
-    --rd:#ff4438;
-    --gr:#4ade80;
-    --bl:#4db8ff;
-    --yl:#ffe81f;        /* signature crawl yellow — peak emphasis only */
-    --vi:#c9a6ff;
-    --cy:var(--am);         /* legacy token, repointed */
-    --ph:var(--am);
+    /* accents — Strety's segment palette */
+    --org:#f58220;          /* the one primary action colour */
+    --org-dk:#dd7015;
+    --pink:#db2777;
+    --amber:#f59e0b;
+    --cyan:#0891b2;
+    --purple:#7c3aed;
+    --green:#16a34a;
+    --blue:#2563eb;
+    --red:#dc2626;
 
-    /* ---- type */
-    --txt:#eceae4;          /* warm off-white */
-    --dim:#9aa4ac;
-    --dim2:#6d777e;
-    --stencil:#aeb7bc;
+    /* semantic (JS writes --rd and --am directly, keep both) */
+    --rd:var(--red);
+    --am:var(--amber);
+    --gr:var(--green);
 
-    --now-size:clamp(34px,6.2vw,74px);
-    --tail-size:clamp(17px,1.85vw,25px);
-    --rail:56px;
-    --chamf-sm:polygon(0 7px, 7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%);
+    --radius:8px;
+    --radius-sm:6px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+    --shadow-lg:0 8px 24px rgba(16,24,40,.12), 0 2px 6px rgba(16,24,40,.06);
 
-    --sans:"Bahnschrift","DIN Alternate","Roboto Condensed","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
-    --mono:"Cascadia Mono","Consolas",ui-monospace,"Courier New",monospace;
+    --now-size:clamp(21px,4.4vw,34px);
+    --tail-size:clamp(14px,1.5vw,16px);
 
-    /* grime: faint vertical streaking laid over hull surfaces */
-    --grime:repeating-linear-gradient(94deg,#0000 0 37px,#00000012 37px 38px,#0000 38px 83px,#0000000e 83px 85px,#0000 85px 150px);
-    /* console deck: riveted plate with seams, sits behind every panel */
-    --deck:
-      repeating-linear-gradient(90deg,#0000 0 219px,#00000026 219px 221px),
-      repeating-linear-gradient(180deg,#0000 0 157px,#0000001c 157px 159px),
-      repeating-linear-gradient(94deg,#0000 0 37px,#00000012 37px 38px,#0000 38px 83px,#0000000e 83px 85px,#0000 85px 150px),
-      linear-gradient(180deg,#4c5257,#40464a 45%,#353b3f);
-    /* plate bevel: 1px light top edge, 1px dark bottom edge */
-    --bevel:inset 0 1px 0 #ffffff26, inset 0 -1px 0 #00000073;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Inter,Roboto,
+           "Helvetica Neue",Arial,sans-serif;
+    --mono:"Cascadia Mono",Consolas,ui-monospace,"SF Mono",Menlo,monospace;
+    /* the Strety multicolour bar */
+    --spectrum:linear-gradient(90deg,#db2777 0%,#f59e0b 27%,#06b6d4 52%,#7c3aed 76%,#16a34a 100%);
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
-    margin:0;color:var(--txt);font-family:var(--sans);overflow:hidden;
-    -webkit-font-smoothing:antialiased;background:var(--void);
+    margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+    font-size:14px;line-height:1.5;overflow:hidden;-webkit-font-smoothing:antialiased;
   }
   button,input,select,textarea{font:inherit;color:inherit}
   button{cursor:pointer}
   .hidden{display:none !important}
   .mono{font-family:var(--mono)}
+  #app{display:flex;flex-direction:column;height:100vh;min-width:0}
 
-  /* stencilled panel label — the recurring type treatment */
-  .zoneLabel,.switchLabel,#statusbar,.panel>summary,.fset>h3,.kbd,.srcTag{
-    text-transform:uppercase;letter-spacing:.14em;
-  }
-
-  #app{
-    display:flex;flex-direction:column;height:100vh;position:relative;z-index:1;padding:0 var(--rail);
-    background:var(--deck);
-  }
-  @media (max-width:1100px){ #app{padding:0} }
-
-  /* ======================================================= canted side rails
-     Decorative hull furniture only — key grids, louvred vents, rivet lines. They
-     carry no data on purpose: a readout that means nothing is worse than none.
-     Canted inward at the top like the real side consoles. */
-  .rail{
-    position:fixed;top:0;bottom:0;width:var(--rail);z-index:2;pointer-events:none;
-    display:flex;flex-direction:column;align-items:center;gap:9px;padding:10px 0;
-    background:linear-gradient(90deg,var(--hull-dk),var(--hull) 35%,var(--hull-lt) 72%,var(--hull-dk)),var(--grime);
-    box-shadow:var(--bevel), 2px 0 10px #000a;
-  }
-  .rail-l{left:0;clip-path:polygon(0 0,100% 46px,100% 100%,0 100%)}
-  .rail-r{right:0;clip-path:polygon(0 46px,100% 0,100% 100%,0 100%);
-    background:linear-gradient(270deg,var(--hull-dk),var(--hull) 35%,var(--hull-lt) 72%,var(--hull-dk)),var(--grime);}
-  @media (max-width:1100px){ .rail{display:none} }
-
-  /* illuminated square key grid, straight off the reference consoles */
-  .keys{display:grid;grid-template-columns:repeat(2,13px);gap:3px;margin-top:14px}
-  .keys b{
-    display:block;width:13px;height:10px;background:#20252a;
-    box-shadow:inset 0 1px 0 #ffffff2e, inset 0 -1px 0 #0009, 0 0 0 1px #0b0d0f;
-  }
-  .keys b.r{background:#c4362c;box-shadow:inset 0 1px 0 #ff8f86,inset 0 -1px 0 #0009,0 0 0 1px #0b0d0f,0 0 6px #ff443866}
-  .keys b.g{background:#2f9e5c;box-shadow:inset 0 1px 0 #9bf0bd,inset 0 -1px 0 #0009,0 0 0 1px #0b0d0f,0 0 6px #4ade8066}
-  .keys b.b{background:#2b7fb8;box-shadow:inset 0 1px 0 #9ad8ff,inset 0 -1px 0 #0009,0 0 0 1px #0b0d0f,0 0 6px #4db8ff66}
-  .keys b.a{background:#c98322;box-shadow:inset 0 1px 0 #ffd08a,inset 0 -1px 0 #0009,0 0 0 1px #0b0d0f,0 0 6px #ffab3d66}
-  /* louvred vent */
-  .vent{width:34px;height:34px;background:repeating-linear-gradient(180deg,#0d1012 0 3px,#6b7377 3px 6px);
-    box-shadow:inset 0 0 0 1px #0b0d0f, var(--bevel)}
-  /* white scribe box — the ruled outline rectangles on the reference panels */
-  .scribe{width:34px;height:48px;box-shadow:inset 0 0 0 1px #b9c2c655}
-  .scribe.org{box-shadow:inset 0 0 0 1px #e8703f99}
-  /* knurled cylindrical knob, as on the reference consoles */
-  .knob{
-    width:26px;height:26px;border-radius:50%;
-    background:
-      repeating-conic-gradient(#1a1e21 0 4deg,#3d4348 4deg 8deg),
-      radial-gradient(circle at 38% 30%,#6d757a,#15181b);
-    box-shadow:0 0 0 2px #0b0d0f, 0 2px 4px #000c, inset 0 2px 3px #ffffff26;
-  }
-  .rivets{display:flex;flex-direction:column;gap:7px}
-  .rivets i{display:block;width:5px;height:5px;border-radius:50%;
-    background:radial-gradient(circle at 34% 28%,#aab2b6,#22272b)}
-  .railfill{flex:1 1 auto}
-
-  /* =============================================================== coaming
-     The strip of small round LEDs across the top of the console. Three layered
-     dot rows at different periods, so every 7th lamp is orange and every 11th
-     is red — one element, no markup, no animation. */
-  #coaming{
-    flex:0 0 auto;height:19px;display:flex;align-items:center;gap:14px;padding:0 14px;
-    background:linear-gradient(180deg,var(--hull-lt),var(--hull) 45%,var(--hull-dk)),var(--grime);
-    box-shadow:var(--bevel);
-  }
-  #coaming .leds{
-    flex:1 1 auto;height:9px;
-    background:
-      radial-gradient(circle at 6.5px 4.5px,#ff4438 1.8px,transparent 2.3px) 0 0/143px 9px repeat-x,
-      radial-gradient(circle at 6.5px 4.5px,#ff8b4a 1.8px,transparent 2.3px) 0 0/91px 9px repeat-x,
-      radial-gradient(circle at 6.5px 4.5px,#dfe5e8 1.6px,transparent 2.1px) 0 0/13px 9px repeat-x;
-  }
-  #coaming .obox{flex:0 0 auto;width:54px;height:10px;box-shadow:inset 0 0 0 1px var(--org);opacity:.8}
-  #coaming .obox.w{box-shadow:inset 0 0 0 1px #b9c2c666;width:26px}
-  @media (max-width:700px){ #coaming .obox{display:none} }
-
-  /* ========================================================= instrument strip */
+  /* ============================================================== top nav */
   #statusbar{
-    flex:0 0 auto;display:flex;align-items:center;gap:15px;flex-wrap:wrap;
-    padding:7px 14px;font-size:11px;color:#c8d0d5;
-    background:linear-gradient(180deg,#3b4145 0,#2a2f33 70%,#22272a),var(--grime);
-    box-shadow:var(--bevel);
+    flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 12px;height:40px;
+    background:var(--nav);color:#a9adb5;font-size:11.5px;white-space:nowrap;overflow:hidden;
   }
-  #statusbar b{color:#fff;font-weight:600;letter-spacing:.04em;text-transform:none}
-  .sbItem{display:flex;align-items:center;gap:6px;white-space:nowrap}
-  /* annunciator lamp — square, recessed into the hull, lit from behind */
-  .dot{
-    width:9px;height:9px;flex:0 0 auto;background:#171b1e;
-    box-shadow:inset 0 0 0 1px #000, inset 0 1px 0 #ffffff1f;
-  }
-  .dot.ok{background:var(--gr);box-shadow:inset 0 0 0 1px #0e3d24, inset 0 1px 0 #ffffff66, 0 0 8px var(--gr)}
-  .dot.warn{background:var(--am);box-shadow:inset 0 0 0 1px #4a2c06, inset 0 1px 0 #ffffff66, 0 0 8px var(--am)}
-  .dot.err{background:var(--rd);box-shadow:inset 0 0 0 1px #4a0f0c, inset 0 1px 0 #ffffff66, 0 0 9px var(--rd)}
-  .dot.live{animation:lamp 1.7s ease-in-out infinite}
-  @keyframes lamp{0%,100%{opacity:1}50%{opacity:.38}}
+  #statusbar b{color:var(--nav-txt);font-weight:500}
+  .sbItem{display:flex;align-items:center;gap:5px;min-width:0}
+  .sbItem.shrink{overflow:hidden;text-overflow:ellipsis}
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:#4b5058}
+  .dot.ok{background:#22c55e;box-shadow:0 0 0 3px #22c55e26}
+  .dot.warn{background:var(--amber);box-shadow:0 0 0 3px #f59e0b26}
+  .dot.err{background:#f87171;box-shadow:0 0 0 3px #f8717133}
+  .dot.live{animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   #sbSpacer{flex:1 1 auto}
+  #brand{display:flex;align-items:center;gap:7px;font-weight:600;color:#fff;font-size:13px;
+    letter-spacing:-.01em;flex:0 0 auto}
+  #brandMark{width:16px;height:16px;border-radius:4px;background:var(--spectrum);flex:0 0 auto}
 
-  /* ============================================================ switch panel */
+  /* the signature multicolour rule, directly under the nav */
+  #spectrum{flex:0 0 auto;height:3px;background:var(--spectrum)}
+
+  /* ========================================================= control strip */
   #controls{
-    flex:0 0 auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 14px;
-    background:linear-gradient(180deg,var(--hull-lt) 0,var(--hull) 40%,var(--hull-dk)),var(--grime);
-    box-shadow:var(--bevel),0 3px 12px #0009;
+    flex:0 0 auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+    padding:8px 12px;background:var(--card);border-bottom:1px solid var(--line);
   }
-  /* illuminated console key */
   .btn{
-    position:relative;background:linear-gradient(180deg,#7e868a,#4d5458 52%,#3a4145);
-    border:0;color:#f2f0ea;padding:8px 14px;font-size:12.5px;font-weight:600;
-    letter-spacing:.07em;text-transform:uppercase;display:inline-flex;align-items:center;gap:8px;
-    box-shadow:inset 0 1px 0 #ffffff59, inset 0 -2px 0 #00000073, 0 0 0 1px #0b0d0f, 0 2px 3px #0007;
-    transition:filter .1s,transform .05s;text-shadow:0 1px 1px #0006;
+    background:var(--card);border:1px solid var(--line);color:var(--txt);
+    padding:6px 11px;font-size:12.5px;font-weight:500;border-radius:var(--radius-sm);
+    display:inline-flex;align-items:center;gap:6px;transition:background .12s,border-color .12s;
+    white-space:nowrap;
   }
-  .btn:hover{filter:brightness(1.16)}
-  .btn:active{transform:translateY(1px);box-shadow:inset 0 2px 5px #000c,0 0 0 1px #0b0d0f}
-  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn:hover{background:var(--hover);border-color:#d8d8dc}
+  .btn:active{background:#f0f0f2}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn .k{
-    font-family:var(--mono);font-size:10px;letter-spacing:0;text-shadow:none;
-    background:#0c0f11;padding:1px 4px;line-height:13px;color:var(--yl);
-    box-shadow:inset 0 0 0 1px #ffffff1f;
+    font-family:var(--mono);font-size:9.5px;color:var(--txt-3);background:var(--bg);
+    border:1px solid var(--line);border-radius:3px;padding:0 3px;line-height:14px;
   }
-  .btn.primary{background:linear-gradient(180deg,#e09a3a,#96590f 52%,#6d3f08);color:#fff6e4;
-    box-shadow:inset 0 1px 0 #ffdca6,inset 0 -2px 0 #00000073,0 0 0 1px #0b0d0f,0 0 12px #ffab3d40}
-  .btn.go{background:linear-gradient(180deg,#3fb872,#1d7645 52%,#14512f);color:#eaffef;
-    box-shadow:inset 0 1px 0 #a5f0c2,inset 0 -2px 0 #00000073,0 0 0 1px #0b0d0f,0 0 12px #4ade8040}
-  .btn.stop{background:linear-gradient(180deg,#d64a3e,#8d2119 52%,#651610);color:#ffeceb;
-    box-shadow:inset 0 1px 0 #ff9d94,inset 0 -2px 0 #00000073,0 0 0 1px #0b0d0f,0 0 12px #ff443840}
-  .btn.sm{padding:6px 10px;font-size:11.5px}
+  .btn.primary{background:var(--org);border-color:var(--org);color:#fff;font-weight:600}
+  .btn.primary:hover{background:var(--org-dk);border-color:var(--org-dk)}
+  .btn.primary .k{background:#ffffff2e;border-color:#ffffff45;color:#fff}
+  .btn.go{background:#0f9d58;border-color:#0f9d58;color:#fff;font-weight:600}
+  .btn.go:hover{background:#0c8449;border-color:#0c8449}
+  .btn.go .k{background:#ffffff2e;border-color:#ffffff45;color:#fff}
+  .btn.stop{background:#fff;border-color:#f3c2c2;color:#b91c1c;font-weight:600}
+  .btn.stop:hover{background:#fef2f2;border-color:#e9a8a8}
+  .btn.sm{padding:5px 8px;font-size:12px}
+  .btn.icon{padding:5px 7px}
 
-  /* three-position selector — recessed into the hull */
-  #backendSwitch{
-    display:flex;background:#0c0f11;
-    box-shadow:inset 0 2px 7px #000, 0 0 0 1px #0b0d0f, 0 0 0 5px #e8703f66, 0 0 0 6px #0b0d0f33;
-    margin-right:5px;
-  }
+  /* segmented backend control */
+  #backendSwitch{display:inline-flex;background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:2px;gap:2px}
   #backendSwitch .seg{
-    padding:8px 13px;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-    color:#79838a;border:0;border-right:1px solid #0b0d0f;
-    background:linear-gradient(180deg,#4c5357,#31373b);transition:filter .1s;
-    box-shadow:inset 0 1px 0 #ffffff26;
+    padding:4px 9px;font-size:11.5px;font-weight:500;color:var(--txt-2);border:0;background:transparent;
+    border-radius:4px;transition:background .12s,color .12s;white-space:nowrap;
   }
-  #backendSwitch .seg:last-child{border-right:0}
-  #backendSwitch .seg:hover{filter:brightness(1.3);color:#c2cace}
-  #backendSwitch .seg.on{
-    background:linear-gradient(180deg,#3fb872,#14512f);color:#eaffef;
-    text-shadow:0 0 9px #4ade80;box-shadow:inset 0 1px 0 #a5f0c2, 0 0 13px #4ade8055;
-  }
-  #backendSwitch .seg.on[data-b="api"]{
-    background:linear-gradient(180deg,#e09a3a,#6d3f08);color:#fff6e4;
-    text-shadow:0 0 9px var(--am);box-shadow:inset 0 1px 0 #ffdca6, 0 0 13px #ffab3d55;
-  }
-  #backendSwitch .seg.on[data-b="local"]{
-    background:linear-gradient(180deg,#3f9bd6,#12496e);color:#eaf7ff;
-    text-shadow:0 0 9px var(--bl);box-shadow:inset 0 1px 0 #a5daff, 0 0 13px #4db8ff55;
-  }
-  .switchLabel{font-size:10px;color:#2a2f33;margin-left:6px;text-shadow:0 1px 0 #ffffff1f}
+  #backendSwitch .seg:hover{color:var(--txt);background:#ececef}
+  #backendSwitch .seg.on{background:var(--card);color:var(--txt);font-weight:600;
+    box-shadow:0 1px 2px rgba(16,24,40,.08);}
+  #backendSwitch .seg.on[data-b="handoff"]{color:#0f7a43}
+  #backendSwitch .seg.on[data-b="api"]{color:var(--org-dk)}
+  #backendSwitch .seg.on[data-b="local"]{color:var(--purple)}
+  .switchLabel{font-size:11px;color:var(--txt-3);margin-left:2px}
 
-  /* ================================================================ away bar */
-  #away{
-    flex:0 0 auto;margin:9px 14px 0;padding:9px 14px;background:var(--screen);color:#bfe4ff;font-size:14px;
-    box-shadow:inset 0 0 0 1px #4db8ff4d, 0 0 0 3px var(--hull-dk), 0 0 0 4px #0b0d0f;
-    display:flex;align-items:center;gap:12px;
-  }
-  #away b{color:#fff}
-  #awayClose{margin-left:auto}
-
-  /* =========================================================== threat alert
-     Master caution: hazard striping, red-lit face, seated in the grey hull. */
-  #alertZone{
-    flex:0 0 auto;position:relative;margin:12px 14px 0;padding:20px 20px 15px;
-    background:linear-gradient(180deg,#5e1712,#320a07 68%,#210605);
-    box-shadow:inset 0 0 0 1px #ff443866, inset 0 1px 0 #ff8b8280,
-               0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 6px 24px -10px #ff443899;
-    animation:alertIn .16s ease-out;
-  }
-  #alertZone::before{                        /* hazard stripe along the top edge */
-    content:'';position:absolute;left:0;right:0;top:0;height:7px;
-    background:repeating-linear-gradient(-45deg,var(--yl) 0 9px,#141414 9px 18px);
-  }
-  #alertZone.soft{
-    background:linear-gradient(180deg,#5e4109,#2f2105 68%,#1e1503);
-    box-shadow:inset 0 0 0 1px #ffab3d66, inset 0 1px 0 #ffd08a80,
-               0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 6px 24px -12px #ffab3d88;
-  }
-  @keyframes alertIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
-  #alertHead{display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;margin-top:5px}
-  #alertKind{
-    font-size:clamp(21px,2.7vw,34px);font-weight:700;letter-spacing:.05em;color:#fff;
-    text-transform:uppercase;text-shadow:0 0 18px #ff443899;
-  }
-  #alertZone.soft #alertKind{color:#ffe6bd;text-shadow:0 0 18px #ffab3d99}
-  #alertAgo{font-family:var(--mono);font-size:13px;color:#ffb9bd}
-  #alertZone.soft #alertAgo{color:#ffd79a}
-  #alertQ{margin-top:9px;font-size:clamp(16px,1.9vw,23px);line-height:1.4;color:#ffeceb}
-  #alertQ em{color:#fff;font-style:normal;background:#ff443840;box-shadow:0 0 0 1px #ff443877;padding:0 5px}
-  #alertPoints{margin:13px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
-  #alertPoints li{
-    font-size:clamp(14px,1.5vw,18px);line-height:1.35;color:#fff;padding:8px 13px;
-    background:#00000059;border-left:3px solid #ffffff80;
-  }
-  #alertBar{display:flex;gap:9px;margin-top:13px;align-items:center;flex-wrap:wrap}
-
-  /* ====================================================== targeting computer
-     The two-second-glance element: an amber CRT recessed in a grey bezel, with
-     reticle corners, scanlines and one slow sweep. All transform/opacity. */
-  #nowZone{
-    flex:0 0 auto;position:relative;margin:12px 14px 0;padding:22px 26px 18px;overflow:hidden;
-    background:radial-gradient(125% 155% at 50% 0%,#1c1206,#0b0805 68%,#050403);
-    box-shadow:inset 0 0 0 1px #ffab3d33, inset 0 0 70px #ffab3d0f,
-               0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 4px 16px -8px #000;
-  }
-  #nowZone .scan{                            /* CRT scanlines — static */
-    position:absolute;inset:0;pointer-events:none;
-    background:repeating-linear-gradient(180deg,#00000000 0 2px,#0000005c 2px 4px);
-    mix-blend-mode:multiply;
-  }
-  #nowZone .sweep{
-    position:absolute;left:0;right:0;height:70px;pointer-events:none;
-    background:linear-gradient(180deg,transparent,#ffab3d10 45%,#ffab3d1c 50%,transparent);
-    animation:sweep 7s linear infinite;
-  }
-  @keyframes sweep{from{transform:translateY(-80px)}to{transform:translateY(430px)}}
-  #nowZone .reticle{                         /* four corner brackets, one node */
-    position:absolute;inset:9px;pointer-events:none;opacity:.6;
-    background:
-      linear-gradient(var(--am),var(--am)) left top/22px 2px no-repeat,
-      linear-gradient(var(--am),var(--am)) left top/2px 22px no-repeat,
-      linear-gradient(var(--am),var(--am)) right top/22px 2px no-repeat,
-      linear-gradient(var(--am),var(--am)) right top/2px 22px no-repeat,
-      linear-gradient(var(--am),var(--am)) left bottom/22px 2px no-repeat,
-      linear-gradient(var(--am),var(--am)) left bottom/2px 22px no-repeat,
-      linear-gradient(var(--am),var(--am)) right bottom/22px 2px no-repeat,
-      linear-gradient(var(--am),var(--am)) right bottom/2px 22px no-repeat;
-  }
-  #nowZone>*:not(.scan):not(.sweep):not(.reticle){position:relative;z-index:1}
-  #nowZone.changed{animation:lockOn 2.4s ease-out}
-  @keyframes lockOn{
-    0%{box-shadow:inset 0 0 0 2px var(--am), inset 0 0 90px #ffab3d55, 0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 0 46px -6px var(--am)}
-    40%{box-shadow:inset 0 0 0 1px #ffab3d99, inset 0 0 60px #ffab3d22, 0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 0 18px -10px var(--am)}
-    100%{box-shadow:inset 0 0 0 1px #ffab3d33, inset 0 0 70px #ffab3d0f, 0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 4px 16px -8px #000}
-  }
-  .zoneLabel{font-size:10.5px;color:#8a7a5e;display:flex;align-items:center;gap:10px}
-  #nowZone .zoneLabel{color:#b08a45}
-  #topicChangedTag{
-    color:#241f02;background:var(--yl);padding:1px 8px;font-weight:700;letter-spacing:.12em;
-    box-shadow:0 0 16px var(--yl);animation:tagBlink 1s steps(2) 5;
-  }
-  @keyframes tagBlink{50%{opacity:.25}}
-  #topic{
-    margin:9px 0 0;font-size:var(--now-size);line-height:1.03;font-weight:700;letter-spacing:-.005em;
-    color:#ffc978;overflow-wrap:anywhere;text-shadow:0 0 28px #ffab3d66,0 0 7px #ffab3d55;
-  }
-  #topic.idle{color:#7d6538;font-weight:600;text-shadow:none}
-  #topicMeta{margin-top:10px;font-family:var(--mono);font-size:11.5px;color:#a08348}
-  .srcTag{font-size:9.5px;padding:1px 6px;color:var(--dim);background:#00000059;
-    box-shadow:inset 0 0 0 1px #ffffff2b}
-  .srcTag.claude{color:var(--vi);box-shadow:inset 0 0 0 1px #c9a6ff55}
-  .srcTag.local{color:var(--am2);box-shadow:inset 0 0 0 1px #ffab3d55}
-
-  /* ========================================================== console panels
-     Dark screens seated in grey bezels — the ring stack is:
-     dark line / grey bezel / dark seam, all as inset shadows so nothing clips. */
+  /* ============================================================== scroller */
   #contextZone{
-    flex:1 1 auto;min-height:0;display:grid;gap:12px;padding:12px 14px 14px;
-    grid-template-columns:minmax(0,1.35fr) minmax(280px,.85fr);
+    flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+    display:flex;flex-direction:column;gap:10px;padding:10px 12px 16px;
   }
-  @media (max-width:900px){#contextZone{grid-template-columns:1fr;overflow:auto}}
-  .col{min-height:0;display:flex;flex-direction:column;gap:12px;overflow:auto}
-  .col::after{
-    content:'';flex:1 1 auto;min-height:0;
-    background:
-      radial-gradient(circle at 18px 18px,#ff8b4a 2px,transparent 2.6px) 0 0/22px 22px no-repeat,
-      radial-gradient(circle at 40px 18px,#dfe5e8 2px,transparent 2.6px) 0 0/62px 22px no-repeat,
-      radial-gradient(circle at 62px 18px,#4ade80 2px,transparent 2.6px) 0 0/84px 22px no-repeat,
-      linear-gradient(#0000,#0000);
-    box-shadow:inset 0 0 0 1px #ffffff14, inset 0 1px 0 #ffffff2b;
-  }
+  .col{display:contents}          /* the two old columns collapse into one flow */
+
   .card{
-    position:relative;background:var(--screen);padding:16px 18px 17px;
-    box-shadow:inset 0 0 0 1px #ffffff0f, 0 0 0 4px var(--hull), 0 0 0 5px #0b0d0f, 0 2px 6px #0007;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:12px 14px;flex:0 0 auto;
   }
-  .card::after{                              /* small LED cluster, top-right */
-    content:'';position:absolute;top:8px;right:9px;width:30px;height:5px;pointer-events:none;
-    background:
-      radial-gradient(circle at 2.5px 2.5px,#ff8b4a99 2px,transparent 2.5px) 0 0/11px 5px no-repeat,
-      radial-gradient(circle at 2.5px 2.5px,#dfe5e880 2px,transparent 2.5px) 11px 0/11px 5px no-repeat,
-      radial-gradient(circle at 2.5px 2.5px,#4ade8080 2px,transparent 2.5px) 22px 0/11px 5px no-repeat;
-  }
-  .card.grow{flex:1000 1 auto;min-height:0;display:flex;flex-direction:column}
+  .card.grow{flex:1 1 auto;min-height:180px;display:flex;flex-direction:column}
 
-  /* illuminated data tabs */
-  #chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px;min-height:30px}
+  /* card header, matching Strety's icon + title + divider */
+  .zoneLabel{
+    display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--txt);
+    padding-bottom:8px;border-bottom:1px solid var(--line-2);margin-bottom:9px;
+  }
+  .zoneLabel .ic{width:15px;height:15px;flex:0 0 auto;opacity:.85}
+  .zoneLabel .meta{margin-left:auto;font-size:11px;font-weight:400;color:var(--txt-3)}
+
+  /* ============================================================== alert */
+  #away{
+    flex:0 0 auto;margin:10px 12px 0;padding:9px 12px;border-radius:var(--radius);
+    background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:12.5px;
+    display:flex;align-items:center;gap:9px;line-height:1.45;
+  }
+  #away b{color:#1e3a8a}
+  #awayClose{margin-left:auto;flex:0 0 auto}
+
+  #alertZone{
+    flex:0 0 auto;margin:10px 12px 0;padding:13px 14px;border-radius:var(--radius);
+    background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid var(--red);
+    box-shadow:0 2px 10px rgba(220,38,38,.10);animation:alertIn .16s ease-out;
+  }
+  #alertZone.soft{background:#fffbeb;border-color:#fcd34d;border-left-color:var(--amber);
+    box-shadow:0 2px 10px rgba(245,158,11,.10)}
+  @keyframes alertIn{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}
+  #alertHead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  #alertKind{font-size:clamp(15px,2.6vw,19px);font-weight:700;color:#991b1b;letter-spacing:-.01em}
+  #alertZone.soft #alertKind{color:#92400e}
+  #alertAgo{font-size:11.5px;color:#b91c1c;font-variant-numeric:tabular-nums}
+  #alertZone.soft #alertAgo{color:#b45309}
+  #alertQ{margin-top:6px;font-size:clamp(13.5px,1.8vw,15.5px);line-height:1.45;color:#450a0a}
+  #alertZone.soft #alertQ{color:#451a03}
+  #alertQ em{font-style:normal;font-weight:700;background:#fecaca;border-radius:3px;padding:0 3px;color:#7f1d1d}
+  #alertZone.soft #alertQ em{background:#fde68a;color:#78350f}
+  #alertPoints{margin:9px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px}
+  #alertPoints li{
+    font-size:12.5px;line-height:1.4;color:#450a0a;padding:7px 9px;background:#fff;
+    border:1px solid #fecaca;border-radius:var(--radius-sm);
+  }
+  #alertZone.soft #alertPoints li{color:#451a03;border-color:#fde68a}
+  #alertBar{display:flex;gap:6px;margin-top:9px;align-items:center;flex-wrap:wrap}
+  #alertSrc{font-size:10.5px;color:var(--txt-3)}
+
+  /* ================================================================ now */
+  #nowZone{
+    flex:0 0 auto;margin:10px 12px 0;padding:13px 15px;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    position:relative;overflow:hidden;
+  }
+  #nowZone:before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--spectrum)}
+  #nowZone.changed{animation:topicFlash 2.2s ease-out}
+  @keyframes topicFlash{
+    0%{background:#eff6ff;border-color:#93c5fd;box-shadow:0 0 0 4px #3b82f61f}
+    100%{background:var(--card);border-color:var(--line);box-shadow:var(--shadow)}
+  }
+  #nowZone .zoneLabel{border-bottom:0;padding-bottom:0;margin-bottom:4px;font-size:11px;
+    font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.06em}
+  #topic{
+    margin:0;font-size:var(--now-size);line-height:1.18;font-weight:700;letter-spacing:-.02em;
+    color:var(--txt);overflow-wrap:anywhere;
+  }
+  #topic.idle{color:var(--txt-3);font-weight:600}
+  #topicMeta{margin-top:5px;font-size:11.5px;color:var(--txt-3)}
+  #topicChangedTag{
+    background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 6px;font-size:10px;
+    font-weight:700;letter-spacing:.04em;animation:tagBlink 1s steps(2) 4;
+  }
+  @keyframes tagBlink{50%{opacity:.3}}
+  .srcTag{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--bg);
+    color:var(--txt-2);border:1px solid var(--line);font-weight:500}
+  .srcTag.claude{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+  .srcTag.local{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+
+  /* ============================================================== chips */
+  #chips{display:flex;flex-wrap:wrap;gap:5px;min-height:26px}
   .chip{
-    background:linear-gradient(180deg,#6b4712,#3a2609);color:var(--am2);
-    padding:5px 12px;font-size:clamp(13px,1.4vw,17px);font-weight:600;white-space:nowrap;letter-spacing:.03em;
-    box-shadow:inset 0 1px 0 #ffab3d6b, 0 0 0 1px #0b0d0f;
+    background:var(--bg);border:1px solid var(--line);color:var(--txt-2);border-radius:999px;
+    padding:3px 10px;font-size:12.5px;font-weight:500;white-space:nowrap;
   }
-  .chip.hot{
-    background:linear-gradient(180deg,#a86e17,#54350a);color:#ffe4bb;text-shadow:0 0 10px #ffab3d88;
-    box-shadow:inset 0 1px 0 #ffd08a,0 0 0 1px #0b0d0f,0 0 11px #ffab3d40;
-  }
-  .chip .n{opacity:.5;font-size:.78em;margin-left:6px;font-family:var(--mono)}
-  .chipEmpty{color:var(--dim2);font-size:13px;font-style:italic}
+  .chip.hot{background:#fff7ed;border-color:#fed7aa;color:#c2410c;font-weight:600}
+  .chip .n{opacity:.5;font-size:.82em;margin-left:4px;font-variant-numeric:tabular-nums}
+  .chipEmpty{color:var(--txt-3);font-size:12.5px}
 
-  #bullets{margin:11px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
-  #bullets li{font-size:clamp(14px,1.45vw,18px);line-height:1.4;padding-left:17px;position:relative;color:#dfe4ea}
-  #bullets li:before{content:"";position:absolute;left:0;top:.5em;width:7px;height:7px;
-    background:var(--am);box-shadow:0 0 7px #ffab3d99}
-  #bullets li:first-child{color:#fff}
+  #bullets{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+  #bullets li{font-size:13.5px;line-height:1.45;padding-left:14px;position:relative;color:var(--txt)}
+  #bullets li:before{content:"";position:absolute;left:0;top:.55em;width:5px;height:5px;
+    border-radius:50%;background:var(--purple)}
 
-  /* comms readout — highest value-per-line panel, so nothing clever happens here */
+  /* =========================================================== transcript */
   #tail{
-    flex:1 1 auto;min-height:0;overflow:auto;margin-top:11px;font-size:var(--tail-size);
-    line-height:1.55;color:#e3ded3;scroll-behavior:smooth;
+    flex:1 1 auto;min-height:0;overflow-y:auto;font-size:var(--tail-size);line-height:1.6;
+    color:var(--txt);scroll-behavior:smooth;
   }
-  #tail .interim{color:var(--am);opacity:.8;font-style:italic}
-  #tail .hit{background:#ff443840;box-shadow:inset 0 -2px 0 var(--rd);color:#fff;padding:0 2px}
-  #tail .old{color:#828b92}
-  #tailEmpty{color:var(--dim2);font-style:italic;font-size:16px}
+  #tail .interim{color:var(--txt-3);font-style:italic}
+  #tail .hit{background:#fee2e2;border-radius:3px;padding:0 2px;font-weight:600;color:#991b1b}
+  #tail .old{color:var(--txt-3)}
+  #tailEmpty{color:var(--txt-3);font-size:13px}
+  #tailStatus{font-size:10.5px;color:var(--txt-3)}
 
-  /* bulkhead sub-panels */
+  /* =============================================================== panels */
   .panel{
-    background:var(--screen);overflow:hidden;flex:0 0 auto;
-    box-shadow:inset 0 0 0 1px #ffffff0f, 0 0 0 3px var(--hull-dk), 0 0 0 4px #0b0d0f;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden;flex:0 0 auto;
   }
   .panel>summary{
-    list-style:none;cursor:pointer;padding:9px 13px;display:flex;align-items:center;gap:9px;
-    font-size:10.5px;color:#2b3034;user-select:none;font-weight:600;
-    background:linear-gradient(180deg,var(--hull-lt),var(--hull) 50%,var(--hull-dk));
-    box-shadow:var(--bevel);text-shadow:0 1px 0 #ffffff26;
+    list-style:none;cursor:pointer;padding:9px 13px;display:flex;align-items:center;gap:8px;
+    font-size:12.5px;font-weight:600;color:var(--txt);user-select:none;
   }
   .panel>summary::-webkit-details-marker{display:none}
-  .panel>summary:hover{color:#0e1113}
+  .panel>summary:before{content:"›";font-size:15px;color:var(--txt-3);transition:transform .15s;
+    display:inline-block;width:9px}
+  .panel[open]>summary:before{transform:rotate(90deg)}
+  .panel>summary:hover{background:var(--hover)}
   .panel>summary .count{
-    margin-left:auto;background:#0c0f11;color:var(--am2);padding:1px 8px;font-size:11px;
-    font-family:var(--mono);letter-spacing:0;text-shadow:none;
-    box-shadow:inset 0 0 0 1px #000, 0 0 7px #ffab3d33;
+    margin-left:auto;background:var(--bg);color:var(--txt-2);border:1px solid var(--line);
+    border-radius:999px;padding:0 7px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;
   }
-  .panel>summary .count.zero{color:var(--dim2);box-shadow:inset 0 0 0 1px #000}
-  .panel .body{padding:11px 13px 13px;font-size:14px;line-height:1.45}
-  .panel .body ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
-  .panel .body li{padding-left:14px;position:relative;color:#d3d9e0}
-  .panel .body li:before{content:"▸";position:absolute;left:0;color:var(--dim2);font-size:10px;top:2px}
-  .panel .body .none{color:var(--dim2);font-style:italic}
-  li.mine{
-    background:linear-gradient(90deg,#5e4109,#2f2105);border-left:3px solid var(--am);
-    padding:7px 10px 7px 12px;color:#ffe6bd;box-shadow:inset 0 1px 0 #ffab3d3d;
-  }
-  li.mine:before{display:none}
-  li.mine .who{color:var(--am2)}
-  li .who{font-family:var(--mono);font-size:10.5px;color:var(--dim2);margin-left:7px;letter-spacing:0}
-  .tlRow{display:flex;gap:10px;align-items:baseline}
-  .tlRow .tm{font-family:var(--mono);font-size:11.5px;color:var(--am);flex:0 0 auto;opacity:.8}
-  .glossTerm{color:var(--vi);font-weight:700}
+  .panel>summary .count.zero{color:var(--txt-3);background:transparent;border-color:transparent}
+  .panel[open]>summary{border-bottom:1px solid var(--line-2)}
+  .panel .body{padding:10px 13px 12px;font-size:13px;line-height:1.5}
+  .panel .body ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  .panel .body li{padding-left:0;position:relative;color:var(--txt)}
+  .panel .body .none{color:var(--txt-3);font-style:normal;font-size:12.5px}
+  li.mine{background:#fff7ed;border:1px solid #fed7aa;border-left:3px solid var(--org);
+    border-radius:var(--radius-sm);padding:7px 9px;color:#7c2d12}
+  li .who{font-size:10.5px;color:var(--txt-3);margin-left:6px;font-weight:500}
+  li.mine .who{color:var(--org-dk);font-weight:700}
+  .tlRow{display:flex;gap:8px;align-items:baseline}
+  .tlRow .tm{font-size:11px;color:var(--txt-3);flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .glossTerm{color:var(--purple);font-weight:600}
+  .netLogRow{font-family:var(--mono);font-size:10.5px;color:var(--txt-2);padding:3px 0;
+    display:flex;gap:8px;border-bottom:1px solid var(--line-2);flex-wrap:wrap}
+  .netLogRow .ok{color:#15803d} .netLogRow .bad{color:var(--red)} .netLogRow .blk{color:var(--purple)}
 
-  /* ================================================================ discreet
-     Lights down, glow off, type down. Still a cockpit, just not a lit one. */
-  body.discreet{--now-size:clamp(20px,2.4vw,30px);--tail-size:15px}
-  body.discreet .rail,body.discreet #coaming,
-  body.discreet #nowZone .sweep,body.discreet #nowZone .reticle{display:none}
-  body.discreet #app{padding:0}
-  body.discreet #nowZone{background:#0a0d10;padding:11px 15px;
-    box-shadow:inset 0 0 0 1px #ffffff14, 0 0 0 2px #2b3034}
-  body.discreet #topic{color:#aab4bd;text-shadow:none;font-weight:600}
-  body.discreet #topicMeta,body.discreet #nowZone .zoneLabel{color:var(--dim2)}
-  body.discreet #alertZone{background:#2a100f;padding:10px 14px;animation:none;
-    box-shadow:inset 0 0 0 1px #ff44384d, 0 0 0 2px #2b3034}
-  body.discreet #alertZone::before{display:none}
-  body.discreet #alertKind{font-size:16px;text-shadow:none}
-  body.discreet #alertQ{font-size:14px}
-  body.discreet .chip{background:#1a1f23;color:#96a3ad;font-size:12px;padding:3px 9px;
-    box-shadow:inset 0 0 0 1px #ffffff1a;text-shadow:none}
-  body.discreet .card{box-shadow:inset 0 0 0 1px #ffffff0f, 0 0 0 2px #2b3034}
-  body.discreet .card::after{display:none}
-  body.discreet #bullets li{font-size:14px}
-  body.discreet #statusbar,body.discreet #controls{filter:saturate(.25) brightness(.8)}
-
-  /* ============================================================ panic screen
-     Deliberately NOT themed. This is the screen someone else might see. */
-  #panic{
-    position:fixed;inset:0;z-index:9999;background:#fff;color:#222;display:none;
-    font-family:Calibri,Carlito,"Segoe UI",sans-serif;
+  /* recording indicator — always visible while capturing, never dimmed by
+     discreet mode, because the room's right to know outranks our aesthetics */
+  #recBadge{
+    display:inline-flex;align-items:center;gap:5px;background:#dc2626;color:#fff;
+    font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;flex:0 0 auto;letter-spacing:.01em;
   }
+  .recDot{width:6px;height:6px;border-radius:50%;background:#fff;animation:recPulse 1.4s ease-in-out infinite}
+  @keyframes recPulse{0%,100%{opacity:1}50%{opacity:.25}}
+  body.discreet #recBadge{background:#dc2626;color:#fff}
+
+  /* sensitive-meeting banner */
+  #sensBar{
+    flex:0 0 auto;background:#4c1d95;color:#ede9fe;font-size:11.5px;font-weight:600;
+    padding:5px 12px;display:flex;align-items:center;gap:7px;
+  }
+  #sensBar .lock{font-size:12px}
+
+  /* Level 10 agenda segments */
+  #segbar{
+    flex:0 0 auto;display:flex;gap:4px;padding:7px 12px;background:var(--card);
+    border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;
+  }
+  #segbar::-webkit-scrollbar{display:none}
+  .segp{
+    flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--txt-2);
+    font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:999px;white-space:nowrap;
+    transition:background .12s,color .12s,border-color .12s;
+  }
+  .segp:hover{background:var(--hover);color:var(--txt)}
+  .segp.on{background:#eef2ff;border-color:#c7d2fe;color:#3730a3;font-weight:600}
+  .segp.on[data-seg="Scorecard"]{background:#ecfdf5;border-color:#a7f3d0;color:#047857}
+  .segp.on[data-seg="Rocks"]{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+  .segp.on[data-seg="Headlines"]{background:#fefce8;border-color:#fde68a;color:#a16207}
+  .segp.on[data-seg="IDS"]{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+  .segp.on[data-seg="Conclude"]{background:#f5f3ff;border-color:#ddd6fe;color:#6d28d9}
+
+  /* first-run choice cards */
+  .choice{
+    border:1px solid var(--line);border-radius:var(--radius);padding:12px 13px;margin-top:10px;
+    cursor:pointer;transition:border-color .12s,background .12s;
+  }
+  .choice:hover{border-color:var(--org);background:#fffaf5}
+  .choice .ct{font-weight:600;font-size:14px;display:flex;align-items:center;gap:7px}
+  .choice .cd{font-size:12.5px;color:var(--txt-2);margin-top:4px;line-height:1.5}
+  .pill{font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;letter-spacing:.02em}
+  .pill.good{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+  .ackRow{display:flex;gap:9px;align-items:flex-start;margin-top:12px;padding:10px 12px;
+    background:var(--bg);border-radius:var(--radius-sm);font-size:13px;line-height:1.45;cursor:pointer}
+  .autoTag{font-size:9.5px;font-weight:700;color:var(--txt-3);background:var(--bg);border:1px solid var(--line);
+    border-radius:3px;padding:0 4px;margin-left:6px;letter-spacing:.02em}
+  .rmBtn{margin-left:6px;border:0;background:transparent;color:var(--txt-3);font-size:14px;line-height:1;
+    padding:0 3px;border-radius:3px;cursor:pointer}
+  .rmBtn:hover{color:var(--red);background:#fef2f2}
+  .segTag{font-size:9.5px;font-weight:600;color:#3730a3;background:#eef2ff;border:1px solid #c7d2fe;
+    border-radius:3px;padding:0 4px;margin-left:6px}
+
+  /* ============================================================= discreet */
+  body.discreet{--now-size:clamp(15px,2.6vw,19px);--tail-size:13px}
+  body.discreet #spectrum{display:none}
+  body.discreet #nowZone:before{background:var(--line)}
+  body.discreet #nowZone{box-shadow:none}
+  body.discreet .card,body.discreet .panel{box-shadow:none}
+  body.discreet #alertZone{background:var(--card);border-color:var(--line);
+    border-left-color:#d4d4d8;box-shadow:none}
+  body.discreet #alertKind{color:var(--txt);font-size:14px}
+  body.discreet #alertQ{color:var(--txt-2);font-size:13px}
+  body.discreet #alertQ em{background:var(--bg);color:var(--txt)}
+  body.discreet .chip{background:var(--card);color:var(--txt-3)}
+  body.discreet .chip.hot{background:var(--card);border-color:var(--line);color:var(--txt-2)}
+
+  /* ========================================================= panic screen
+     Deliberately plain. This is the screen someone else might see. */
+  #panic{position:fixed;inset:0;z-index:9999;background:#fff;color:#222;display:none;
+    font-family:Calibri,Carlito,"Segoe UI",sans-serif}
   body.panic #panic{display:block}
-  body.panic #app,body.panic .rail{visibility:hidden}
+  body.panic #app{visibility:hidden}
   #panicBar{height:30px;border-bottom:1px solid #e3e3e3;background:#f7f7f7;display:flex;
     align-items:center;padding:0 12px;font-size:12px;color:#666;gap:18px}
-  #panicPage{max-width:760px;margin:46px auto;padding:0 40px;font-size:15px;line-height:1.9;color:#333}
+  #panicPage{max-width:760px;margin:40px auto;padding:0 34px;font-size:15px;line-height:1.9;color:#333}
   #panicCaret{display:inline-block;width:1px;height:1.05em;background:#333;vertical-align:-2px;
     animation:caret 1.06s steps(1) infinite}
   @keyframes caret{50%{opacity:0}}
-  #panicHint{position:fixed;bottom:10px;right:14px;font-size:10px;color:#e8e8e8}
+  #panicHint{position:fixed;bottom:8px;right:12px;font-size:10px;color:#ededed}
 
-  /* ================================================================ overlays */
-  .scrim{position:fixed;inset:0;background:#000000cc;z-index:400;display:flex;
-    align-items:center;justify-content:center;padding:24px}
+  /* ============================================================== overlays */
+  .scrim{position:fixed;inset:0;background:rgba(16,24,40,.45);z-index:400;display:flex;
+    align-items:center;justify-content:center;padding:16px}
   .modal{
-    background:var(--screen);width:min(880px,100%);max-height:88vh;display:flex;flex-direction:column;
-    box-shadow:inset 0 0 0 1px #ffffff0f, 0 0 0 5px var(--hull), 0 0 0 6px #0b0d0f, 0 30px 90px -20px #000;
+    background:var(--card);border-radius:12px;width:min(680px,100%);max-height:90vh;
+    display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden;
   }
-  .modal header{display:flex;align-items:center;gap:12px;padding:13px 20px;
-    background:linear-gradient(180deg,var(--hull-lt),var(--hull) 50%,var(--hull-dk));box-shadow:var(--bevel)}
-  .modal header h2{margin:0;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:#1a1d20;
-    text-shadow:0 1px 0 #ffffff2b}
-  .modal .body{padding:17px 20px;overflow:auto;font-size:14.5px;line-height:1.55}
-  .modal footer{padding:13px 20px;display:flex;gap:9px;align-items:center;flex-wrap:wrap;
-    background:#121517;box-shadow:inset 0 1px 0 #ffffff12}
-  .modal .x{margin-left:auto;background:transparent;border:0;color:#1a1d20;font-size:20px;line-height:1}
-  .modal .x:hover{color:#000}
-  .md h3{margin:16px 0 6px;font-size:13px;color:var(--am);letter-spacing:.12em;text-transform:uppercase}
-  .md h2{margin:18px 0 6px;font-size:17px;color:#fff}
-  .md p{margin:6px 0}
-  .md li{margin:3px 0}
-  .md code{font-family:var(--mono);background:#000000aa;padding:1px 5px;font-size:.9em;color:var(--am2)}
-  .md strong{color:#fff}
-
+  .modal header{display:flex;align-items:center;gap:10px;padding:13px 16px;
+    border-bottom:1px solid var(--line)}
+  .modal header h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .modal .body{padding:15px 16px;overflow:auto;font-size:13.5px;line-height:1.55}
+  .modal footer{padding:11px 16px;border-top:1px solid var(--line);display:flex;gap:7px;
+    align-items:center;flex-wrap:wrap;background:var(--bg)}
+  .modal .x{margin-left:auto;background:transparent;border:0;color:var(--txt-3);font-size:19px;
+    line-height:1;padding:0 4px;border-radius:4px}
+  .modal .x:hover{color:var(--txt);background:var(--hover)}
+  .md h2{margin:14px 0 5px;font-size:15px;font-weight:600}
+  .md h3{margin:13px 0 5px;font-size:12px;font-weight:700;color:var(--txt-2);
+    text-transform:uppercase;letter-spacing:.05em}
+  .md p{margin:5px 0}
+  .md ul{margin:5px 0;padding-left:18px}
+  .md li{margin:2px 0}
+  .md code{font-family:var(--mono);background:var(--bg);border:1px solid var(--line);
+    padding:0 4px;border-radius:3px;font-size:.9em}
+  .md strong{font-weight:600}
   textarea.payload{
-    width:100%;min-height:190px;background:#05070a;border:0;padding:11px;
-    box-shadow:inset 0 0 0 1px #ffffff14, inset 0 2px 8px #000;
-    font-family:var(--mono);font-size:11.5px;line-height:1.5;color:#d0c4a8;resize:vertical;
+    width:100%;min-height:150px;background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:9px;font-family:var(--mono);font-size:11px;
+    line-height:1.5;color:var(--txt);resize:vertical;
   }
 
-  /* ========================================================= settings drawer */
+  /* ============================================================== settings */
   #settings{
-    position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);z-index:500;
-    background:linear-gradient(180deg,#1b1f23,#101315);
-    box-shadow:inset 5px 0 0 var(--hull), inset 6px 0 0 #0b0d0f, -20px 0 60px -20px #000;
-    display:flex;flex-direction:column;transform:translateX(102%);transition:transform .18s ease-out;
+    position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);z-index:500;background:var(--card);
+    border-left:1px solid var(--line);display:flex;flex-direction:column;
+    transform:translateX(102%);transition:transform .18s ease-out;box-shadow:var(--shadow-lg);
   }
   body.settingsOpen #settings{transform:none}
-  #settings header{display:flex;align-items:center;padding:13px 16px 13px 22px;
-    background:linear-gradient(180deg,var(--hull-lt),var(--hull) 50%,var(--hull-dk));box-shadow:var(--bevel)}
-  #settings header h2{margin:0;font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:#1a1d20;
-    text-shadow:0 1px 0 #ffffff2b}
-  #settings .body{flex:1 1 auto;overflow:auto;padding:14px 16px 60px 22px}
-  .fset{background:#0f1214;padding:13px 15px;margin-bottom:12px;
-    box-shadow:inset 0 0 0 1px #ffffff0f, 0 0 0 2px var(--hull-dk), 0 0 0 3px #0b0d0f}
-  .fset>h3{margin:0 0 11px;font-size:10px;color:var(--am);opacity:.9}
-  .row{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+  #settings header{display:flex;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line)}
+  #settings header h2{margin:0;font-size:15px;font-weight:600}
+  #settings .body{flex:1 1 auto;overflow:auto;padding:14px 16px 48px;background:var(--bg)}
+  .fset{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 13px;margin-bottom:10px;box-shadow:var(--shadow)}
+  .fset>h3{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--txt-3)}
+  .row{display:flex;flex-direction:column;gap:4px;margin-bottom:11px}
   .row:last-child{margin-bottom:0}
-  .row label{font-size:12.5px;color:var(--dim);font-weight:600}
-  .row .hint,.hint{font-size:11.5px;color:var(--dim2);line-height:1.45}
+  .row label{font-size:12.5px;color:var(--txt);font-weight:500}
+  .row .hint,.hint{font-size:11.5px;color:var(--txt-2);line-height:1.45}
   .row input[type=text],.row input[type=password],.row input[type=number],.row select,.row textarea{
-    background:#05070a;border:0;padding:8px 10px;font-size:13.5px;width:100%;
-    box-shadow:inset 0 0 0 1px #ffffff14, inset 0 2px 6px #000;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:7px 9px;font-size:13px;width:100%;
   }
   .row input:focus,.row select:focus,.row textarea:focus{
-    outline:none;box-shadow:inset 0 0 0 1px var(--am), inset 0 2px 6px #000, 0 0 10px #ffab3d3d;
+    outline:none;border-color:var(--org);box-shadow:0 0 0 3px #f5822024;
   }
-  .row textarea{min-height:74px;resize:vertical;line-height:1.4}
+  .row textarea{min-height:66px;resize:vertical;line-height:1.45}
   .row.inline{flex-direction:row;align-items:center;gap:9px}
   .row.inline label{flex:1 1 auto}
-  input[type=range]{width:100%;accent-color:var(--am)}
-  input[type=checkbox]{width:16px;height:16px;accent-color:var(--am)}
-  .warn{background:#3a2a05;color:#ffdf9e;padding:9px 11px;font-size:12px;line-height:1.45;margin-top:8px;
-    box-shadow:inset 0 0 0 1px #ffab3d4d}
-  .warn.red{background:#3a0d11;color:#ffc9cd;box-shadow:inset 0 0 0 1px #ff44384d}
-  .warn.ok{background:#0c3226;color:#a9f2d8;box-shadow:inset 0 0 0 1px #4ade804d}
-  .warn b{color:#fff}
+  input[type=range]{width:100%;accent-color:var(--org)}
+  input[type=checkbox]{width:15px;height:15px;accent-color:var(--org);flex:0 0 auto}
+  .warn{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:var(--radius-sm);
+    padding:8px 10px;font-size:11.5px;line-height:1.45;margin-top:7px}
+  .warn.red{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
+  .warn.ok{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
+  .warn b{font-weight:700}
 
-  /* ================================================================== toasts */
-  #toasts{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:900;
-    display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+  /* ================================================================ toasts */
+  #toasts{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:900;
+    display:flex;flex-direction:column;gap:7px;align-items:center;pointer-events:none;
+    width:min(440px,calc(100vw - 24px))}
   .toast{
-    background:linear-gradient(180deg,#5a6165,#2a2f33);color:#f0eee8;padding:11px 17px;font-size:13.5px;
-    max-width:min(560px,92vw);box-shadow:inset 0 1px 0 #ffffff40, 0 0 0 1px #0b0d0f, 0 12px 40px -12px #000;
-    animation:toastIn .16s ease-out;
+    background:var(--nav);color:#f3f4f6;border-radius:var(--radius);padding:9px 14px;font-size:12.5px;
+    line-height:1.45;box-shadow:var(--shadow-lg);animation:toastIn .16s ease-out;width:100%;
   }
-  .toast.err{background:linear-gradient(180deg,#8d2119,#3a0d0a);color:#ffd6da;
-    box-shadow:inset 0 1px 0 #ff9d94,0 0 0 1px #0b0d0f,0 12px 40px -12px #000}
-  .toast.ok{background:linear-gradient(180deg,#1d7645,#0d3a22);color:#c3f7db;
-    box-shadow:inset 0 1px 0 #a5f0c2,0 0 0 1px #0b0d0f,0 12px 40px -12px #000}
-  @keyframes toastIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+  .toast.err{background:#7f1d1d}
+  .toast.ok{background:#065f46}
+  @keyframes toastIn{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
 
-  /* ==================================================================== misc */
-  .kbd{font-family:var(--mono);font-size:10px;letter-spacing:0;padding:1px 5px;color:var(--am2);
-    background:#0c0f11;box-shadow:inset 0 0 0 1px #ffffff1f}
-  a{color:var(--am)}
-  .netLogRow{font-family:var(--mono);font-size:11px;color:var(--dim);padding:4px 0;display:flex;gap:10px;
-    box-shadow:inset 0 -1px 0 #ffffff0f}
-  .netLogRow .ok{color:var(--gr)} .netLogRow .bad{color:var(--rd)} .netLogRow .blk{color:var(--am)}
+  /* ================================================================== misc */
+  .kbd{font-family:var(--mono);font-size:10px;padding:1px 4px;border-radius:3px;
+    background:var(--bg);border:1px solid var(--line);color:var(--txt-2)}
+  a{color:var(--blue)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#d4d4d8;border-radius:5px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:#b4b4b8}
 
-  /* Motion is decoration; anyone who asked for less gets none of it. */
+  /* very narrow: shed the non-essential chrome */
+  @media (max-width:430px){
+    #controls{gap:4px;padding:7px 9px}
+    .btn{padding:5px 8px;font-size:12px}
+    .switchLabel{display:none}
+    #contextZone{padding:8px 9px 14px}
+    #nowZone,#alertZone,#away{margin-left:9px;margin-right:9px}
+  }
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation:none !important;transition:none !important}
   }
@@ -614,52 +513,29 @@
 </head>
 <body>
 
-<!-- Decorative hull furniture. Canted like the real side consoles; the key grids
-     and lamps are ornament only and deliberately carry no data — a readout that
-     means nothing is worse than no readout. -->
-<div class="rail rail-l" aria-hidden="true">
-  <div class="keys"><b class="r"></b><b class="g"></b><b></b><b class="b"></b><b class="a"></b><b></b></div>
-  <div class="scribe org"></div>
-  <div class="vent"></div>
-  <div class="railfill"></div>
-  <div class="knob"></div>
-  <div class="scribe"></div>
-  <div class="railfill"></div>
-  <div class="rivets"><i></i><i></i><i></i></div>
-  <div class="keys"><b class="g"></b><b></b><b class="a"></b><b class="r"></b></div>
-</div>
-<div class="rail rail-r" aria-hidden="true">
-  <div class="keys"><b class="b"></b><b class="a"></b><b></b><b class="g"></b><b></b><b class="r"></b></div>
-  <div class="scribe"></div>
-  <div class="vent"></div>
-  <div class="railfill"></div>
-  <div class="scribe org"></div>
-  <div class="knob"></div>
-  <div class="railfill"></div>
-  <div class="rivets"><i></i><i></i><i></i></div>
-  <div class="keys"><b class="a"></b><b class="r"></b><b></b><b class="b"></b></div>
-</div>
-
 <!-- ===================================================================== APP -->
 <div id="app">
 
-  <!-- instrument coaming: the row of small round lamps across the top -->
-  <div id="coaming" aria-hidden="true">
-    <span class="obox w"></span><span class="leds"></span><span class="obox"></span>
-  </div>
 
   <!-- ------------------------------------------------------- status bar -->
   <div id="statusbar">
-    <span class="sbItem"><span class="dot" id="sbCapDot"></span>CAP <b id="sbCap">idle</b></span>
-    <span class="sbItem">STT <b id="sbStt">web-speech</b></span>
-    <span class="sbItem">SUM <b id="sbBackend">handoff</b></span>
-    <span class="sbItem"><span class="dot" id="sbNetDot"></span><b id="sbNet">no outbound calls</b></span>
-    <span class="sbItem hidden" id="sbApiWrap">API <b id="sbApi">–</b></span>
-    <span class="sbItem hidden" id="sbCostWrap">COST <b id="sbCost">$0.0000</b></span>
+    <span id="brand"><span id="brandMark"></span>Recap</span>
+    <span id="recBadge" class="hidden" title="This meeting is being transcribed">
+      <span class="recDot"></span>Recording</span>
+    <span class="sbItem"><span class="dot" id="sbCapDot"></span><b id="sbCap">Idle</b></span>
+    <span class="sbItem shrink" id="sbSttWrap"><b id="sbStt">Web Speech</b></span>
+    <span class="sbItem"><span class="dot" id="sbNetDot"></span><b id="sbNet">No calls out</b></span>
+    <span class="sbItem hidden" id="sbApiWrap"><b id="sbApi">–</b></span>
+    <span class="sbItem hidden" id="sbCostWrap"><b id="sbCost">$0.0000</b></span>
     <span id="sbSpacer"></span>
-    <span class="sbItem">BUF <b id="sbBuf">0w</b></span>
-    <span class="sbItem" id="sbClockWrap">MTG <b id="sbClock">00:00</b></span>
+    <span class="sbItem"><b id="sbBackend">handoff</b></span>
+    <span class="sbItem"><b id="sbBuf">0w</b></span>
+    <span class="sbItem" id="sbClockWrap"><b id="sbClock">00:00</b></span>
+    <span class="sbItem" id="sbVer" title="Build version"></span>
   </div>
+  <div id="spectrum" aria-hidden="true"></div>
+  <div id="sensBar" class="hidden"><span class="lock">&#128274;</span>
+    Sensitive meeting — export, claude.ai handoff and all API calls are switched off.</div>
 
   <!-- --------------------------------------------------- control strip -->
   <div id="controls">
@@ -679,6 +555,18 @@
     <button class="btn sm" id="btnExport" title="Download the meeting as Markdown">⭳ Export <span class="k">E</span></button>
     <button class="btn sm" id="btnNew" title="Clear the meeting and start fresh">✧ New meeting</button>
     <button class="btn sm" id="btnSettings">⚙ Settings <span class="k">S</span></button>
+  </div>
+
+  <!-- Level 10 agenda segments. Tapping one stamps everything captured from
+       here on, so the export reads as an agenda log instead of a word cloud. -->
+  <div id="segbar" role="group" aria-label="Level 10 agenda segment">
+    <button class="segp" data-seg="Check-in">Check-in</button>
+    <button class="segp" data-seg="Scorecard">Scorecard</button>
+    <button class="segp" data-seg="Rocks">Rocks</button>
+    <button class="segp" data-seg="Headlines">Headlines</button>
+    <button class="segp" data-seg="To-dos">To-dos</button>
+    <button class="segp" data-seg="IDS">IDS</button>
+    <button class="segp" data-seg="Conclude">Conclude</button>
   </div>
 
   <!-- --------------------------------------------- while you were away -->
@@ -705,9 +593,6 @@
 
   <!-- ------------------------------------------------------------ NOW -->
   <section id="nowZone">
-    <div class="scan" aria-hidden="true"></div>
-    <div class="sweep" aria-hidden="true"></div>
-    <div class="reticle" aria-hidden="true"></div>
     <div class="zoneLabel">
       <span>Now</span>
       <span class="srcTag local" id="topicSrc">local</span>
@@ -721,14 +606,29 @@
   <section id="contextZone">
     <div class="col">
       <div class="card">
-        <div class="zoneLabel"><span>Key terms right now</span></div>
+        <div class="zoneLabel"><span>Key terms</span></div>
         <div id="chips"><span class="chipEmpty">waiting for speech…</span></div>
       </div>
 
       <div class="card hidden" id="bulletsCard">
-        <div class="zoneLabel"><span>Recent</span><span class="srcTag claude" id="bulletsSrc">claude</span></div>
+        <div class="zoneLabel"><span>Summary</span><span class="srcTag claude" id="bulletsSrc">claude</span></div>
         <ul id="bullets"></ul>
       </div>
+
+      <details class="panel" id="pDecisions" open>
+        <summary>Decisions <span class="count zero" id="cDecisions">0</span></summary>
+        <div class="body"><ul id="lDecisions"><li class="none">None yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pActions" open>
+        <summary>To-dos <span class="count zero" id="cActions">0</span></summary>
+        <div class="body"><ul id="lActions"><li class="none">None yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pIssues" open>
+        <summary>Issues <span class="count zero" id="cIssues">0</span></summary>
+        <div class="body"><ul id="lIssues"><li class="none">None yet.</li></ul></div>
+      </details>
 
       <div class="card grow" id="tailCard">
         <div class="zoneLabel">
@@ -740,15 +640,6 @@
     </div>
 
     <div class="col">
-      <details class="panel" id="pDecisions" open>
-        <summary>Decisions <span class="count zero" id="cDecisions">0</span></summary>
-        <div class="body"><ul id="lDecisions"><li class="none">None yet.</li></ul></div>
-      </details>
-
-      <details class="panel" id="pActions" open>
-        <summary>Action items <span class="count zero" id="cActions">0</span></summary>
-        <div class="body"><ul id="lActions"><li class="none">None yet.</li></ul></div>
-      </details>
 
       <details class="panel" id="pTimeline" open>
         <summary>Topic timeline <span class="count zero" id="cTimeline">0</span></summary>
@@ -782,7 +673,7 @@
 </div>
 
 <!-- =============================================================== TOASTS -->
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <!-- ============================================================== MODALS -->
 <div class="scrim hidden" id="handoffScrim">
@@ -831,6 +722,63 @@
   </div>
 </div>
 
+<div class="scrim hidden" id="firstRunScrim">
+  <div class="modal">
+    <header><h2>Before you start</h2></header>
+    <div class="body">
+      <p style="margin-top:0">Recap turns speech into text so it can tell you what is being discussed and
+        when someone asks you something. Choose where that transcription happens. You can change it later
+        in Settings.</p>
+      <div class="choice" id="chooseLocal">
+        <div class="ct">On this device <span class="pill good">Recommended</span></div>
+        <div class="cd">Audio never leaves your laptop. Needs a one-time ~40&nbsp;MB download, which some
+          office networks block. Text quality is lower — good enough to follow along.</div>
+      </div>
+      <div class="choice" id="chooseGoogle">
+        <div class="ct">Google speech service</div>
+        <div class="cd">Your meeting audio is sent to <b>Google</b> to be transcribed, the same service
+          phone dictation uses. Nothing to install and noticeably more accurate. Not appropriate for
+          personnel, board, or other confidential conversations.</div>
+      </div>
+    </div>
+    <footer><span class="hint">This choice is remembered on this device.</span></footer>
+  </div>
+</div>
+
+<div class="scrim hidden" id="consentScrim">
+  <div class="modal">
+    <header><h2>Confirm before recording</h2></header>
+    <div class="body">
+      <p style="margin-top:0">Recap is about to transcribe everyone audible in this meeting, not just you.
+        Recording laws in several states require that every participant is told.</p>
+      <ul style="margin:10px 0;padding-left:18px;line-height:1.7">
+        <li>Say out loud that you are using a note-taking assistant.</li>
+        <li>Do not run this in a personnel matter, investigation, board executive session, or any
+          conversation involving a minor.</li>
+        <li>If this is a confidential meeting, close this and switch on <b>Sensitive meeting</b> in Settings.</li>
+      </ul>
+      <label class="ackRow"><input type="checkbox" id="consentAck">
+        <span>I have told the people in this meeting that it is being transcribed.</span></label>
+    </div>
+    <footer>
+      <button class="btn primary" id="consentGo" disabled>Start listening</button>
+      <button class="btn" data-close="consentScrim">Cancel</button>
+      <span class="hint">Asked once per session, every session.</span>
+    </footer>
+  </div>
+</div>
+
+<div class="scrim hidden" id="confirmScrim">
+  <div class="modal" style="max-width:440px">
+    <header><h2 id="confirmTitle">Are you sure?</h2></header>
+    <div class="body"><p id="confirmBody" style="margin:0"></p></div>
+    <footer>
+      <button class="btn primary" id="confirmOk">Confirm</button>
+      <button class="btn" data-close="confirmScrim">Cancel</button>
+    </footer>
+  </div>
+</div>
+
 <!-- ============================================================ SETTINGS -->
 <div id="settings">
   <header>
@@ -874,6 +822,11 @@
         <div class="hint" id="priceHint"></div>
       </div>
       <div class="row">
+        <label>Stop automatic summaries at — $<b id="setSpendCapVal">5</b> this meeting</label>
+        <input type="range" id="setSpendCap" min="0" max="50" step="1">
+        <div class="hint">A hard ceiling. Set to 0 to remove it.</div>
+      </div>
+      <div class="row">
         <label>Ambient call interval — <b id="setIntervalVal">90</b>s</label>
         <input type="range" id="setInterval" min="30" max="300" step="15">
         <div class="hint">A call is skipped entirely when fewer than ~15 new words arrived, so silence costs nothing.</div>
@@ -911,6 +864,17 @@
         <div class="hint">Whisper transcribes in blocks, so text arrives in bursts this far apart. Shorter = more
           responsive, more CPU.</div>
       </div>
+    </div>
+
+    <div class="fset">
+      <h3>Meeting sensitivity</h3>
+      <div class="row inline">
+        <label for="setSensitive">Sensitive meeting — nothing may leave this device</label>
+        <input type="checkbox" id="setSensitive">
+      </div>
+      <div class="hint">Turn this on for personnel matters, investigations, board executive session, or
+        anything involving a minor. It hard-disables export, the claude.ai handoff, and every API call for
+        as long as it is on.</div>
     </div>
 
     <div class="fset">
@@ -977,9 +941,37 @@
     </div>
 
     <div class="fset">
+      <h3>Retention</h3>
+      <div class="row">
+        <label>Purge a stored meeting after — <b id="setRetentionVal">7</b> days</label>
+        <input type="range" id="setRetention" min="1" max="30" step="1">
+        <div class="hint">Enforced on load: anything older is destroyed automatically rather than waiting
+          for someone to remember.</div>
+      </div>
+    </div>
+
+    <div class="fset">
+      <h3>Configuration</h3>
+      <div class="row">
+        <button class="btn sm" id="btnCfgExport">Export settings</button>
+        <div class="hint">Downloads a JSON file so every branch can run the same configuration. The API key
+          is never included.</div>
+      </div>
+      <div class="row">
+        <label for="cfgImport">Import settings</label>
+        <textarea id="cfgImport" placeholder="Paste an exported settings JSON here…"></textarea>
+        <button class="btn sm" id="btnCfgImport">Apply pasted settings</button>
+      </div>
+    </div>
+
+    <div class="fset">
       <h3>Data</h3>
       <div class="hint">Settings and the in-flight meeting live in this browser’s <code>localStorage</code>, so an
-        accidental refresh mid-meeting is not fatal. Nothing is uploaded anywhere.</div>
+        accidental refresh mid-meeting is not fatal, and it auto-purges on the schedule below.</div>
+      <div class="warn">Where things actually go: with the <b>Web Speech</b> engine your audio is sent to
+        <b>Google</b> to be transcribed. With the <b>handoff</b> summarizer, transcript text you copy goes to
+        <b>claude.ai</b> under your own account. Choose <b>on-device transcription</b> and the <b>local</b>
+        summarizer and nothing leaves this machine — the Network log records every attempt either way.</div>
       <div class="row" style="margin-top:10px">
         <button class="btn sm" id="btnWipe">Erase all stored data</button>
       </div>
@@ -1023,7 +1015,7 @@ var PRICES = {
 var RESPONSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['topic','topic_changed','bullets','user_addressed','talking_points','decisions','actions','glossary'],
+  required: ['topic','topic_changed','bullets','user_addressed','talking_points','decisions','actions','issues','glossary'],
   properties: {
     topic: { type: 'string' },
     topic_changed: { type: 'boolean' },
@@ -1040,16 +1032,18 @@ var RESPONSE_SCHEMA = {
     },
     talking_points: { type: 'array', items: { type: 'string' } },
     decisions: { type: 'array', items: { type: 'string' } },
+    issues: { type: 'array', items: { type: 'string' } },
     actions: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['text','owner','mine'],
+        required: ['text','owner','mine','due'],
         properties: {
           text:  { type: 'string' },
           owner: { type: 'string' },
-          mine:  { type: 'boolean' }
+          mine:  { type: 'boolean' },
+          due:   { type: 'string' }
         }
       }
     },
@@ -1092,8 +1086,14 @@ function buildSystemPrompt(profile, context) {
 '  "mentioned". Be conservative — a false alarm is worse than a miss here.',
 '- talking_points: only when user_addressed is non-null. 2-3 short things the user could actually',
 '  say, grounded in what was discussed. Not generic filler.',
-'- decisions / actions / glossary: only NEW items from this chunk. Never repeat items you have',
-'  already reported. Empty arrays are correct and expected most of the time.',
+'- This team runs EOS/Traction and calls things by its names. Use them:',
+'  * decisions: things actually settled.',
+'  * actions: EOS TO-DOS. Short, owned, and due inside seven days. Set "due" to a plain',
+'    date or day if one was stated, otherwise the empty string. Never invent one.',
+'  * issues: things RAISED but NOT resolved — the IDS list. An unresolved concern is an',
+'    issue, not a decision. This is the bucket people most often need later.',
+'- decisions / actions / issues / glossary: only NEW items from this chunk. Never repeat items',
+'  you have already reported. Empty arrays are correct and expected most of the time.',
 '- glossary: only genuinely non-obvious acronyms, jargon, or proper nouns.',
 '- If the chunk is silence, filler, or crosstalk with no substance: repeat the previous topic',
 '  unchanged and return empty arrays.'
@@ -1218,9 +1218,17 @@ function wordCount(s) {
 var SETTINGS_KEY = 'spacecadet.settings.v1';
 var MEETING_KEY  = 'spacecadet.meeting.v1';
 
+var APP_VERSION = '2.0';       // shown in the status bar so IT can tell builds apart
+
 var DEFAULTS = {
   backend: 'handoff',          // handoff (default, free) | api | local
   apiKey: '',
+  /* --- governance, added after the leadership review ------------------ */
+  sensitive: false,            // sensitive meeting: export + all egress hard-off
+  retentionDays: 7,            // stored meeting auto-purges after this many days
+  spendCapUsd: 5,              // api backend stops itself at this session spend
+  firstRunDone: false,         // has the user made the transcription choice yet
+  segment: '',                 // current Level 10 agenda segment
   model: 'claude-sonnet-5',
   intervalSec: 90,
   source: 'mic',               // mic | system
@@ -1235,8 +1243,12 @@ var DEFAULTS = {
   topicTh: 0.35,
   profile: '',
   context: '',
-  discreet: false
+  discreet: true               // quiet by default; a loud banner beside a colleague is worse
 };
+
+/* Consent is per-session, deliberately NOT persisted. Every new page load must
+   re-acknowledge before a single sample of anyone's voice is captured. */
+var consentGiven = false;
 
 var CFG = load(SETTINGS_KEY, DEFAULTS);
 function load(key, defaults) {
@@ -1267,7 +1279,8 @@ function saveCfg() {
 var MEET = {
   startedAt: 0,
   frags: [],          // {t, text, final:true}
-  decisions: [],      // {text, t}
+  decisions: [],      // {text, t, segment, auto}
+  issues: [],         // {text, t, segment, auto}  — the EOS IDS list
   actions: [],        // {text, owner, mine, t}
   glossary: [],       // {term, definition, t}
   timeline: [],       // {topic, t, src}
@@ -1286,7 +1299,15 @@ function restoreMeeting() {
     if (!raw) return false;
     var p = JSON.parse(raw);
     if (!p || !p.startedAt) return false;
-    ['startedAt','decisions','actions','glossary','timeline','alerts','cost',
+
+    /* Retention is enforced, not left to somebody remembering to click Erase. */
+    var ageDays = (now() - (p.savedAt || p.startedAt)) / 86400000;
+    if (ageDays > clamp(CFG.retentionDays, 1, 90)) {
+      try { localStorage.removeItem(MEETING_KEY); } catch (e) {}
+      toast('A stored meeting older than ' + CFG.retentionDays + ' days was purged automatically.', '', 7000);
+      return false;
+    }
+    ['startedAt','decisions','issues','actions','glossary','timeline','alerts','cost',
      'lastSentT','llmTopic','llmBullets','llmTalkingPoints','llmAt'].forEach(function (k) {
       if (p[k] !== undefined && p[k] !== null) MEET[k] = p[k];
     });
@@ -1307,9 +1328,10 @@ function doSaveMeeting() {
   var cap = 900;
   var attempt = function (n) {
     var snap = {
+      savedAt: now(),
       startedAt: MEET.startedAt,
       frags: MEET.frags.slice(-n),
-      decisions: MEET.decisions, actions: MEET.actions, glossary: MEET.glossary,
+      decisions: MEET.decisions, issues: MEET.issues, actions: MEET.actions, glossary: MEET.glossary,
       timeline: MEET.timeline, alerts: MEET.alerts.slice(-40), cost: MEET.cost,
       lastSentT: MEET.lastSentT, llmTopic: MEET.llmTopic, llmBullets: MEET.llmBullets,
       llmTalkingPoints: MEET.llmTalkingPoints, llmAt: MEET.llmAt,
@@ -1328,7 +1350,7 @@ function doSaveMeeting() {
 }
 
 function resetMeeting() {
-  MEET.startedAt = 0; MEET.frags = []; MEET.decisions = []; MEET.actions = [];
+  MEET.startedAt = 0; MEET.frags = []; MEET.decisions = []; MEET.issues = []; MEET.actions = [];
   MEET.glossary = []; MEET.timeline = []; MEET.alerts = [];
   MEET.cost = { inTok: 0, outTok: 0, calls: 0, usd: 0 };
   MEET.lastSentT = 0; MEET.llmTopic = ''; MEET.llmBullets = []; MEET.llmTalkingPoints = []; MEET.llmAt = 0;
@@ -1703,6 +1725,36 @@ function chime(severity) {
   } catch (e) { /* audio is a nicety, never a failure path */ }
 }
 
+/* ---- 7d2. LOCAL EXTRACTION -------------------------------------------
+   Without this, Decisions/To-dos/Issues only ever populate from a Claude call,
+   so the free default captured nothing at all unless the user did a five-step
+   clipboard ritual. These are deliberately conservative patterns over finalised
+   speech; everything they produce is tagged "auto" and removable in one click,
+   because a heuristic guess must never masquerade as a confirmed record. */
+var DECISION_RE = /\b(?:we(?:'ve| have)? decided|we are going with|we'?re going with|let'?s go with|decision is|we agreed|agreed that|we'?ll move forward with|final answer is)\b/i;
+var TODO_RE     = /\b(?:i'?ll (?:take|own|get|send|draft|follow up|circle back)|i will (?:take|own|get|send|draft)|can you (?:take|own|send|draft|pull|put together)|will (?:take|own) (?:that|this)|action item|takes? the action|by (?:monday|tuesday|wednesday|thursday|friday|next week|end of (?:day|week)))\b/i;
+var ISSUE_RE    = /\b(?:the (?:issue|problem|concern|blocker) is|we need to figure out|open question|still unresolved|that'?s a risk|we'?re blocked (?:on|by)|park(?: that| this)|comes? back to this)\b/i;
+
+function sentencesOf(text) {
+  return String(text || '').split(/(?<=[.?!])\s+/)
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return wordCount(x) >= 4 && wordCount(x) <= 40; });
+}
+
+function localExtract(text) {
+  var sents = sentencesOf(text);
+  for (var i = 0; i < sents.length; i++) {
+    var sent = sents[i];
+    if (DECISION_RE.test(sent))      addDecisions([sent], true);
+    else if (TODO_RE.test(sent))     addActions([{ text: sent, owner: '', mine: mentionsMe(sent), due: '' }], true);
+    else if (ISSUE_RE.test(sent))    addIssues([sent], true);
+  }
+}
+function mentionsMe(sent) {
+  var re = buildNameRegex();
+  return /\bi'?(?:ll| will)\b/i.test(sent) || (re ? re.test(sent) : false);
+}
+
 /* ---- 7e. accumulators shared by every backend ---- */
 
 function pushTimeline(topic, src, t) {
@@ -1712,7 +1764,32 @@ function pushTimeline(topic, src, t) {
   if (MEET.timeline.length > 200) MEET.timeline.shift();
   saveMeeting();
 }
-function addDecisions(arr) {
+/* Everything captured is stamped with the Level 10 segment it happened in, so
+   the export reads as an agenda log rather than an undifferentiated pile. */
+function seg() { return CFG.segment || ''; }
+
+function addIssues(arr, auto) {
+  if (!arr || !arr.length) return 0;
+  var added = 0;
+  arr.forEach(function (d) {
+    var text = typeof d === 'string' ? d : (d && d.text);
+    if (!text) return;
+    var k = normKey(text);
+    if (!k || MEET.issues.some(function (x) { return normKey(x.text) === k; })) return;
+    MEET.issues.push({ text: text, t: now(), segment: seg(), auto: !!auto }); added++;
+  });
+  if (added) saveMeeting();
+  return added;
+}
+
+/* Locally-detected items are removable in one click — a heuristic guess the
+   facilitator has not confirmed should never be permanent. */
+function removeItem(kind, idx) {
+  var list = kind === 'dec' ? MEET.decisions : (kind === 'iss' ? MEET.issues : MEET.actions);
+  if (idx >= 0 && idx < list.length) { list.splice(idx, 1); saveMeeting(); renderSoon(); }
+}
+
+function addDecisions(arr, auto) {
   if (!arr || !arr.length) return 0;
   var added = 0;
   arr.forEach(function (d) {
@@ -1720,12 +1797,12 @@ function addDecisions(arr) {
     if (!text) return;
     var k = normKey(text);
     if (!k || MEET.decisions.some(function (x) { return normKey(x.text) === k; })) return;
-    MEET.decisions.push({ text: text, t: now() }); added++;
+    MEET.decisions.push({ text: text, t: now(), segment: seg(), auto: !!auto }); added++;
   });
   if (added) saveMeeting();
   return added;
 }
-function addActions(arr) {
+function addActions(arr, auto) {
   if (!arr || !arr.length) return 0;
   var added = 0;
   arr.forEach(function (a) {
@@ -1738,7 +1815,8 @@ function addActions(arr) {
       text: text,
       owner: (a && a.owner) || '',
       mine: !!(a && a.mine),
-      t: now()
+      due: (a && a.due) || '',
+      t: now(), segment: seg(), auto: !!auto
     });
     added++;
   });
@@ -1893,23 +1971,23 @@ function WebSpeechEngine() {
         case 'audio-capture':
           consecutiveFails++;
           sttStatus('no microphone', 'err');
-          toast('Web Speech lost the microphone. Another app may have grabbed it exclusively.', 'err', 8000);
+          toast('Lost the microphone — another app may have taken it. Close Teams or Zoom audio settings and try again.', 'err', 8000);
           break;
         case 'not-allowed':
         case 'service-not-allowed':
           /* Fatal: no amount of restarting fixes a denied permission. */
           fatal = true; shouldBeRunning = false;
           sttStatus('permission denied', 'err');
-          toast('Microphone permission was denied. A file:// page cannot remember the grant, so Chrome ' +
-                'asks every time — click Allow, or serve the file over http://localhost.', 'err', 12000);
+          toast('Microphone access was blocked. Click Allow when your browser asks. Opening Recap from a ' +
+                'web address instead of a saved file lets the browser remember it.', 'err', 12000);
           /* Do not keep claiming to be live when the engine is dead. */
           setTimeout(function () { if (listening) stopListening(); }, 0);
           break;
         case 'network':
           consecutiveFails++;
           sttStatus('speech service unreachable', 'err');
-          toast('Web Speech could not reach Google\'s speech service — a corporate proxy usually causes this. ' +
-                'Switch the STT engine to local Whisper in Settings.', 'err', 11000);
+          toast('Can\'t reach the speech service right now — this happens on some office networks. ' +
+                'Switch to on-device transcription in Settings, or ask IT to allow it.', 'err', 11000);
           break;
         default:
           consecutiveFails++;
@@ -1947,8 +2025,8 @@ function WebSpeechEngine() {
       if (consecutiveFails > 8) {
         shouldBeRunning = false;
         sttStatus('gave up after repeated failures', 'err');
-        toast('Speech recognition failed repeatedly and has been stopped. Check the microphone, or ' +
-              'switch the STT engine to local Whisper.', 'err', 12000);
+        toast('Transcription kept failing, so it has stopped. Check your microphone, or switch to ' +
+              'on-device transcription in Settings.', 'err', 12000);
         setTimeout(function () { if (listening) stopListening(); }, 0);
         return;
       }
@@ -2216,6 +2294,20 @@ function engineAllowed(engineName, source) {
 async function startListening() {
   if (listening) return;
 
+  /* One-time choice of where transcription happens. The reviewers were unanimous
+     that "audio goes to Google" must be an explicit decision, not a tooltip. */
+  if (!CFG.firstRunDone) { showFirstRun(); return; }
+
+  /* Nobody's voice is captured until the operator states they have told the room.
+     Per session, never remembered — a stale acknowledgement is not consent. */
+  if (!consentGiven) { showConsent(); return; }
+
+  if (!CFG.names || !CFG.names.trim()) {
+    toast('Add your name in Settings first — the name alert cannot fire without it.', 'warn', 8000);
+    openSettings();
+    return;
+  }
+
   var why = engineAllowed(CFG.engine, CFG.source);
   if (why) { toast(why, 'err', 10000); openSettings(); return; }
 
@@ -2293,6 +2385,7 @@ function onFragment(f) {
   if (f.isFinal) {
     VIEW.interim = '';
     addFragment(text, f.t || now());
+    localExtract(text);        // free capture, no backend required
   } else {
     VIEW.interim = text;
   }
@@ -2326,8 +2419,12 @@ function outboundBlocked(purpose, url) {
   renderSoon();
 }
 
-/* The one and only fetch() in Spacecadet. */
+/* The one and only fetch() in Recap. */
 async function outbound(url, init, purpose) {
+  if (CFG.sensitive) {
+    outboundBlocked(purpose + ' (sensitive meeting)', url);
+    throw new Error('sensitive meeting: outbound network is disabled');
+  }
   if (CFG.backend === 'local') {
     outboundBlocked(purpose, url);
     throw new Error('local-only mode: outbound network is disabled');
@@ -2350,6 +2447,7 @@ async function outbound(url, init, purpose) {
 
 /* Opening a claude.ai tab is outbound too — same gate, same log. */
 function openClaudeTab(url) {
+  if (CFG.sensitive) { outboundBlocked('open claude.ai (sensitive meeting)', url); return false; }
   if (CFG.backend === 'local') { outboundBlocked('open claude.ai', url); return false; }
   outboundNote('open claude.ai tab', url, 'navigate');
   try {
@@ -2394,6 +2492,7 @@ function applyLLMState(obj, src) {
   MEET.llmTalkingPoints = Array.isArray(obj.talking_points) ? obj.talking_points.slice(0, 3).map(String) : [];
 
   addDecisions(obj.decisions);
+  addIssues(obj.issues);
   addActions(obj.actions);
   addGlossary(obj.glossary);
 
@@ -2454,6 +2553,8 @@ function previousStateBlock() {
     topic: MEET.llmTopic || '(none yet)',
     bullets_last_reported: (MEET.llmBullets || []).slice(0, 5),
     decisions_already_reported: MEET.decisions.slice(-15).map(function (d) { return d.text; }),
+    issues_already_reported: MEET.issues.slice(-15).map(function (d) { return d.text; }),
+    current_agenda_segment: CFG.segment || '(not set)',
     actions_already_reported: MEET.actions.slice(-15).map(function (a) { return a.text; }),
     glossary_already_reported: MEET.glossary.slice(-25).map(function (g) { return g.term; })
   };
@@ -2515,6 +2616,17 @@ async function ambientTick() {
   if (CFG.backend !== 'api') return;
   if (!CFG.apiKey) { VIEW.api.state = 'nokey'; return; }
   if (apiInFlight) return;
+  /* Hard dollar ceiling. Without one, a 30-second interval left running all day
+     is an unbounded charge on somebody's card. */
+  if (CFG.spendCapUsd > 0 && MEET.cost.usd >= CFG.spendCapUsd) {
+    if (VIEW.api.state !== 'capped') {
+      VIEW.api.state = 'capped'; VIEW.api.msg = 'spend cap reached';
+      toast('Spend cap of $' + Number(CFG.spendCapUsd).toFixed(2) + ' reached — automatic summaries stopped. ' +
+            'Raise it in Settings to continue.', 'warn', 11000);
+      renderSoon();
+    }
+    return;
+  }
   if (now() < VIEW.api.nextRetryAt) return;
   if (now() - lastApiAt < CFG.intervalSec * 1000) return;
 
@@ -2949,11 +3061,15 @@ function renderStatusBar() {
     else if (VIEW.api.latency) txt = VIEW.api.latency + 'ms · ' + MEET.cost.calls + ' calls';
     else txt = 'idle';
     $('sbApi').textContent = txt;
-    $('sbCost').textContent = '$' + MEET.cost.usd.toFixed(4);
+    $('sbCost').textContent = 'Est. ' + '$' + MEET.cost.usd.toFixed(2) + ' this meeting';
   }
 
   var wc = 0, wf = windowFrags();
   for (var i = 0; i < wf.length; i++) wc += wordCount(wf[i].text);
+  $('recBadge').classList.toggle('hidden', VIEW.capture !== 'live');
+  $('sbVer').textContent = 'v' + APP_VERSION;
+  document.body.classList.toggle('sensitive', !!CFG.sensitive);
+  $('sensBar').classList.toggle('hidden', !CFG.sensitive);
   $('sbBuf').textContent = wc + 'w / ' + CFG.windowMin + 'm';
   $('sbClock').textContent = MEET.startedAt ? clockText(now() - MEET.startedAt) : '00:00';
 }
@@ -3077,17 +3193,38 @@ function renderTail() {
 }
 
 function renderPanels() {
+  /* Auto-detected items carry an "auto" tag and a remove control: a heuristic
+     guess must be visibly distinguishable from a confirmed record. */
+  function tags(x, kind, idx) {
+    var h = '';
+    if (x.segment) h += '<span class="segTag">' + esc(x.segment) + '</span>';
+    if (x.auto) h += '<span class="autoTag" title="Detected automatically — check it">AUTO</span>';
+    h += '<button class="rmBtn" title="Remove" data-rm="' + kind + '" data-i="' + idx + '">&times;</button>';
+    return h;
+  }
+
   setCount('cDecisions', MEET.decisions.length);
   $('lDecisions').innerHTML = MEET.decisions.length
-    ? MEET.decisions.slice().reverse().map(function (d) {
-        return '<li>' + esc(d.text) + '<span class="who">' + hhmm(d.t) + '</span></li>'; }).join('')
+    ? MEET.decisions.map(function (d, i) { return { d: d, i: i }; }).reverse().map(function (o) {
+        return '<li>' + esc(o.d.text) + '<span class="who">' + hhmm(o.d.t) + '</span>' +
+               tags(o.d, 'dec', o.i) + '</li>'; }).join('')
+    : '<li class="none">None yet.</li>';
+
+  setCount('cIssues', MEET.issues.length);
+  $('lIssues').innerHTML = MEET.issues.length
+    ? MEET.issues.map(function (d, i) { return { d: d, i: i }; }).reverse().map(function (o) {
+        return '<li>' + esc(o.d.text) + '<span class="who">' + hhmm(o.d.t) + '</span>' +
+               tags(o.d, 'iss', o.i) + '</li>'; }).join('')
     : '<li class="none">None yet.</li>';
 
   setCount('cActions', MEET.actions.length);
   $('lActions').innerHTML = MEET.actions.length
-    ? MEET.actions.slice().reverse().map(function (a) {
+    ? MEET.actions.map(function (a, i) { return { a: a, i: i }; }).reverse().map(function (o) {
+        var a = o.a;
         return '<li class="' + (a.mine ? 'mine' : '') + '">' + esc(a.text) +
-          '<span class="who">' + (a.mine ? 'MINE' : (a.owner ? esc(a.owner) : 'unassigned')) + '</span></li>';
+          '<span class="who">' + (a.mine ? 'MINE' : (a.owner ? esc(a.owner) : 'owner?')) + '</span>' +
+          (a.due ? '<span class="who">due ' + esc(a.due) + '</span>' : '') +
+          tags(a, 'act', o.i) + '</li>';
       }).join('')
     : '<li class="none">None yet.</li>';
 
@@ -3128,14 +3265,87 @@ function renderNetLog() {
 function show(id) { $(id).classList.remove('hidden'); }
 function hide(id) { $(id).classList.add('hidden'); }
 
+/* In-app confirmation. A raw browser confirm() looked like an unfinished
+   prototype the moment it appeared in a demo. */
+var confirmCb = null;
+function uiConfirm(title, body, okLabel, cb) {
+  $('confirmTitle').textContent = title;
+  $('confirmBody').textContent = body;
+  $('confirmOk').textContent = okLabel || 'Confirm';
+  confirmCb = cb;
+  show('confirmScrim');
+}
+
+/* One-time, explicit choice of where transcription happens. */
+function showFirstRun() { show('firstRunScrim'); }
+function chooseEngine(which) {
+  if (which === 'local') { CFG.engine = 'whisper'; CFG.allowCdn = true; }
+  else { CFG.engine = 'webspeech'; CFG.allowCdn = false; }
+  CFG.firstRunDone = true;
+  saveCfg(); syncSettingsUI(); hide('firstRunScrim');
+  toast(which === 'local'
+    ? 'On-device transcription selected. The model downloads once, then audio stays on this machine.'
+    : 'Google speech selected. Switch to on-device in Settings for confidential meetings.', 'ok', 8000);
+  startListening();
+}
+
+/* Per-session consent. Never remembered across loads. */
+function showConsent() {
+  $('consentAck').checked = false;
+  $('consentGo').disabled = true;
+  show('consentScrim');
+}
+
+/* Level 10 agenda segment. */
+function setSegment(name) {
+  CFG.segment = (CFG.segment === name) ? '' : name;
+  saveCfg();
+  Array.prototype.forEach.call(document.querySelectorAll('#segbar .segp'), function (b) {
+    b.classList.toggle('on', b.getAttribute('data-seg') === CFG.segment);
+  });
+  if (CFG.segment) pushTimeline(CFG.segment, 'segment', now());
+  renderSoon();
+}
+
+/* Settings portability, so twelve branches can run one configuration. */
+function exportSettings() {
+  var out = {};
+  for (var k in CFG) if (k !== 'apiKey') out[k] = CFG[k];   // the key never travels
+  out._app = 'recap'; out._version = APP_VERSION;
+  var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'recap-settings.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1200);
+  toast('Settings exported. The API key was deliberately excluded.', 'ok');
+}
+function importSettings(text) {
+  var obj;
+  try { obj = JSON.parse(text); }
+  catch (e) { toast('That is not valid settings JSON.', 'err'); return; }
+  if (!obj || typeof obj !== 'object') { toast('That is not valid settings JSON.', 'err'); return; }
+  var n = 0;
+  for (var k in DEFAULTS) {
+    if (k === 'apiKey') continue;
+    if (obj[k] !== undefined && obj[k] !== null && typeof obj[k] === typeof DEFAULTS[k]) { CFG[k] = obj[k]; n++; }
+  }
+  saveCfg(); syncSettingsUI(); buildNameRegex(); renderSoon();
+  toast(n + ' settings applied. Your API key was left untouched.', 'ok');
+}
+
 /* ===================================================================== 19. export */
 
 function exportMarkdown() {
+  if (CFG.sensitive) {
+    toast('Export is off for a meeting marked sensitive. Change that in Settings if this is not one.', 'err', 9000);
+    return;
+  }
   var started = MEET.startedAt || now();
   var L = [];
   L.push('# Meeting notes — ' + new Date(started).toLocaleString());
   L.push('');
-  L.push('_Captured with Spacecadet · ' + clockText(now() - started) + ' · ' +
+  L.push('_Captured with Recap v' + APP_VERSION + ' · ' + clockText(now() - started) + ' · ' +
          MEET.frags.length + ' transcript fragments · summarizer: ' + CFG.backend + '_');
   if (CFG.backend === 'api' && MEET.cost.calls) {
     L.push('_' + MEET.cost.calls + ' API calls · ' + MEET.cost.inTok + ' in / ' + MEET.cost.outTok +
@@ -3151,19 +3361,29 @@ function exportMarkdown() {
     : '_none recorded_');
   L.push('');
 
+  if (CFG.segment) L.push('_Current agenda segment: ' + CFG.segment + '_\n');
+
   L.push('## Decisions');
   L.push(MEET.decisions.length
     ? MEET.decisions.map(function (d) { return '- ' + d.text + ' _(' + hhmm(d.t) + ')_'; }).join('\n')
     : '_none recorded_');
   L.push('');
 
-  L.push('## Action items');
+  L.push('## Issues (IDS)');
+  L.push(MEET.issues.length
+    ? MEET.issues.map(function (d) {
+        return '- ' + d.text + (d.segment ? ' _(' + d.segment + ')_' : '') + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
+    : '_none recorded_');
+  L.push('');
+
+  L.push('## To-dos');
   if (MEET.actions.length) {
     var mine = MEET.actions.filter(function (a) { return a.mine; });
     var other = MEET.actions.filter(function (a) { return !a.mine; });
     if (mine.length) {
       L.push('### Mine');
-      L.push(mine.map(function (a) { return '- [ ] ' + a.text; }).join('\n'));
+      L.push(mine.map(function (a) {
+        return '- [ ] ' + a.text + (a.due ? ' — due ' + a.due : '') + (a.auto ? ' _(auto-detected)_' : ''); }).join('\n'));
       L.push('');
     }
     if (other.length) {
@@ -3179,12 +3399,9 @@ function exportMarkdown() {
     : '_none recorded_');
   L.push('');
 
-  if (MEET.alerts.length) {
-    L.push('## Times you were flagged');
-    L.push(MEET.alerts.map(function (a) {
-      return '- **' + hhmm(a.t) + '** (' + a.kind + ') ' + (a.question || ''); }).join('\n'));
-    L.push('');
-  }
+  /* MEET.alerts is deliberately NOT exported. It is a log of the moments one
+     person's attention lapsed; in a document the team shares that is a
+     surveillance artifact, not meeting notes. It stays on-screen only. */
 
   L.push('## Transcript');
   L.push('');
@@ -3248,12 +3465,30 @@ function setDiscreet(on) {
   saveCfg();
 }
 
-var panicked = false, titleBefore = document.title;
+var panicked = false, panicStoppedCapture = false, titleBefore = document.title;
+
+/* Esc STOPS CAPTURE. It does not merely hide the window.
+   The original build only toggled a CSS class, so the microphone stayed live
+   behind a fake blank document — a feature whose whole function was to make it
+   look like nothing was being recorded while it was. Three separate reviewers
+   independently called that indefensible, and they were right. Esc now halts
+   capture first and hides second, and coming back never silently resumes:
+   restarting is always a deliberate act with the recording indicator visible. */
 function togglePanic() {
   panicked = !panicked;
+  if (panicked) {
+    if (listening) { stopListening(); panicStoppedCapture = true; }
+    titleBefore = document.title;
+    document.title = 'Document1';
+  } else {
+    document.title = titleBefore;
+    if (panicStoppedCapture) {
+      panicStoppedCapture = false;
+      toast('Capture stopped when you hid the window. Press L to start again.', 'warn', 7000);
+    }
+  }
   document.body.classList.toggle('panic', panicked);
-  if (panicked) { titleBefore = document.title; document.title = 'Document1'; }
-  else { document.title = titleBefore; }
+  renderSoon();
 }
 
 /* ===================================================================== 22. settings UI */
@@ -3269,6 +3504,9 @@ function syncSettingsUI() {
   $('setSource').value = CFG.source;
   $('setEngine').value = CFG.engine;
   $('setAllowCdn').checked = !!CFG.allowCdn;
+  $('setSensitive').checked = !!CFG.sensitive;
+  $('setRetention').value = CFG.retentionDays; $('setRetentionVal').textContent = CFG.retentionDays;
+  $('setSpendCap').value = CFG.spendCapUsd; $('setSpendCapVal').textContent = CFG.spendCapUsd;
   $('setChunk').value = CFG.chunkSec; $('setChunkVal').textContent = CFG.chunkSec;
   $('setNames').value = CFG.names;
   $('setQPatterns').checked = !!CFG.qPatterns;
@@ -3353,6 +3591,16 @@ function bindSettings() {
     if (listening) toast('Restart listening for the new engine to take effect.', 'warn');
   });
   on('setAllowCdn', 'change', function () { CFG.allowCdn = this.checked; saveCfg(); });
+  on('setSensitive', 'change', function () {
+    CFG.sensitive = this.checked; saveCfg(); syncSettingsUI(); renderSoon();
+    if (this.checked) toast('Sensitive meeting on. Export and every outbound path are now blocked.', 'ok', 7000);
+  });
+  on('setRetention', 'input', function () {
+    CFG.retentionDays = +this.value; $('setRetentionVal').textContent = CFG.retentionDays; saveCfg(); });
+  on('setSpendCap', 'input', function () {
+    CFG.spendCapUsd = +this.value; $('setSpendCapVal').textContent = CFG.spendCapUsd; saveCfg(); });
+  on('btnCfgExport', 'click', exportSettings);
+  on('btnCfgImport', 'click', function () { importSettings($('cfgImport').value); });
   on('setChunk', 'input', function () {
     CFG.chunkSec = +this.value; $('setChunkVal').textContent = CFG.chunkSec; saveCfg(); });
   on('setNames', 'input', function () { CFG.names = this.value; saveCfg(); buildNameRegex(); renderSoon(); });
@@ -3368,9 +3616,12 @@ function bindSettings() {
   on('setContext', 'input', function () { CFG.context = this.value; saveCfg(); });
 
   on('btnWipe', 'click', function () {
-    if (!confirm('Erase all Spacecadet settings and the stored meeting from this browser?')) return;
-    try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem(MEETING_KEY); } catch (e) {}
-    location.reload();
+    uiConfirm('Erase everything?',
+      'This clears your saved name, settings and this meeting from this device. It cannot be undone.',
+      'Erase everything', function () {
+        try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem(MEETING_KEY); } catch (e) {}
+        location.reload();
+      });
   });
   on('settingsClose', 'click', closeSettings);
 }
@@ -3405,14 +3656,48 @@ function bindUI() {
   $('btnExport').addEventListener('click', exportMarkdown);
   $('btnDiscreet').addEventListener('click', function () { setDiscreet(!CFG.discreet); });
   $('btnNew').addEventListener('click', function () {
-    if (!confirm('Clear this meeting — transcript, decisions, actions, timeline — and start a new one?')) return;
-    resetMeeting();
-    toast('New meeting started.', 'ok');
-    renderSoon();
+    uiConfirm('Start a new meeting?',
+      'This clears the transcript, decisions, to-dos, issues and timeline from this device.',
+      'Start new meeting', function () {
+        resetMeeting();
+        toast('New meeting started.', 'ok');
+        renderSoon();
+      });
   });
 
   Array.prototype.forEach.call(document.querySelectorAll('#backendSwitch .seg'), function (b) {
     b.addEventListener('click', function () { setBackend(b.getAttribute('data-b')); });
+  });
+
+  /* first-run engine choice */
+  $('chooseLocal').addEventListener('click', function () { chooseEngine('local'); });
+  $('chooseGoogle').addEventListener('click', function () { chooseEngine('google'); });
+
+  /* consent */
+  $('consentAck').addEventListener('change', function () { $('consentGo').disabled = !this.checked; });
+  $('consentGo').addEventListener('click', function () {
+    if (!$('consentAck').checked) return;
+    consentGiven = true;
+    hide('consentScrim');
+    startListening();
+  });
+
+  /* in-app confirm */
+  $('confirmOk').addEventListener('click', function () {
+    var cb = confirmCb; confirmCb = null; hide('confirmScrim');
+    if (typeof cb === 'function') cb();
+  });
+
+  /* Level 10 segment pills */
+  Array.prototype.forEach.call(document.querySelectorAll('#segbar .segp'), function (b) {
+    b.addEventListener('click', function () { setSegment(b.getAttribute('data-seg')); });
+  });
+
+  /* removing an auto-detected item — delegated, because panels re-render often */
+  $('contextZone').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.rmBtn') : null;
+    if (!b) return;
+    removeItem(b.getAttribute('data-rm'), parseInt(b.getAttribute('data-i'), 10));
   });
 
   $('alertDismiss').addEventListener('click', dismissAlert);
