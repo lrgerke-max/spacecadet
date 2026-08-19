@@ -1,0 +1,67 @@
+SPACECADET - meeting attention assistant
+========================================
+
+WHAT IT IS
+  You lose focus in a meeting. You glance at this. Two seconds later you know
+  what is being discussed, and whether someone just asked you something.
+
+HOW TO OPEN IT
+  1. Save spacecadet.html somewhere you will keep it (Desktop or Documents).
+  2. Double-click it. It opens in Chrome or Edge.
+  3. Press S. Enter your name in "My name variants" - including whatever
+     mangled spellings speech-to-text produces for it. The name alert cannot
+     fire without this.
+  4. Press L, then click Allow on the microphone prompt.
+
+  There is nothing to install. No account, no API key, no sign-up.
+
+KEYS
+  L   start / stop listening
+  C   catch me up (copies a prompt, opens claude.ai)
+  S   settings
+  D   dismiss the alert
+  E   export the meeting as a Markdown file
+  V   discreet mode (compact and low-key)
+  Esc panic-hide the screen. Press it again to bring it back.
+
+WHERE YOUR AUDIO GOES
+  There is no server. This is one static file; nothing is uploaded, logged, or
+  stored anywhere except your own browser.
+
+  By default, speech recognition uses the browser's built-in Web Speech engine,
+  which sends audio to Google to be transcribed. That is Chrome's engine, not
+  this app's choice.
+
+  If you want nothing to leave the machine: Settings -> speech-to-text engine ->
+  Local Whisper, and set the summarizer to "local". The app then blocks its own
+  outbound calls and logs every blocked attempt so you can verify it.
+
+  The whole thing is one readable file. Open it in Notepad, or read it on
+  GitHub, before you trust it with a microphone.
+
+TWO THINGS THAT MIGHT GO WRONG
+  1. Chrome asks for the microphone every single time you open it. That is
+     unavoidable for a file opened from disk - a local file has no web address
+     for Chrome to remember a permission against. Opening the hosted version
+     over https fixes it permanently.
+
+  2. "Speech service unreachable" means your network blocks Google's speech
+     service, which many corporate proxies do. Switch the engine to Local
+     Whisper in Settings. That needs a one-off ~40 MB model download, which
+     some networks also block. If both are blocked, transcription cannot run
+     on that network at all.
+
+REMOTE MEETING AUDIO (Windows only)
+  To hear people on the far end of a Teams or Zoom call rather than just your
+  own room, set the audio source to "System / tab audio", share the ENTIRE
+  SCREEN, and tick "Also share system audio" in the picker. A window share
+  carries no audio track. Chrome on macOS cannot do this at all.
+
+REQUIREMENTS
+  Chrome or Edge. Built and tuned for Windows.
+
+SOURCE
+  https://github.com/lrgerke-max/spacecadet
+
+  An unofficial fan-styled personal tool. Not affiliated with or endorsed by
+  Lucasfilm or Disney.

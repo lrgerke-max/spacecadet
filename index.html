@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spacecadet</title>
+<meta name="description" content="A meeting attention assistant. One file, no install, no account.">
+<style>
+  :root{
+    --hull:#575e63;--hull-lt:#79807f;--hull-dk:#3c4247;--screen:#0d0f11;
+    --am:#ffab3d;--am2:#ffd08a;--yl:#ffe81f;--org:#e8703f;--gr:#4ade80;
+    --txt:#eceae4;--dim:#9aa4ac;--dim2:#6d777e;
+    --sans:"Bahnschrift","DIN Alternate","Roboto Condensed","Segoe UI",system-ui,sans-serif;
+    --mono:"Cascadia Mono","Consolas",ui-monospace,monospace;
+    --deck:repeating-linear-gradient(90deg,#0000 0 219px,#00000026 219px 221px),
+           repeating-linear-gradient(180deg,#0000 0 157px,#0000001c 157px 159px),
+           linear-gradient(180deg,#4c5257,#40464a 45%,#353b3f);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--deck);color:var(--txt);font-family:var(--sans);
+       min-height:100vh;padding:28px 18px 60px}
+  .wrap{max-width:760px;margin:0 auto}
+  .coaming{height:15px;margin-bottom:14px;
+    background:radial-gradient(circle at 6.5px 4.5px,#ff4438 1.8px,transparent 2.3px) 0 0/143px 9px repeat-x,
+               radial-gradient(circle at 6.5px 4.5px,#ff8b4a 1.8px,transparent 2.3px) 0 0/91px 9px repeat-x,
+               radial-gradient(circle at 6.5px 4.5px,#dfe5e8 1.6px,transparent 2.1px) 0 0/13px 9px repeat-x;}
+  .screen{background:var(--screen);padding:26px 28px;
+    box-shadow:inset 0 0 0 1px #ffffff0f,0 0 0 4px var(--hull),0 0 0 5px #0b0d0f,0 6px 20px #0007}
+  h1{margin:0;font-size:clamp(38px,7vw,64px);line-height:1;font-weight:700;color:#ffc978;
+     text-shadow:0 0 28px #ffab3d55;letter-spacing:-.01em}
+  .sub{margin:12px 0 0;font-size:clamp(16px,2.2vw,21px);line-height:1.45;color:var(--am2)}
+  .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+    color:#b08a45;margin-bottom:10px}
+  .cta{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0 4px}
+  a.btn{text-decoration:none;padding:13px 22px;font-size:15px;font-weight:600;letter-spacing:.07em;
+    text-transform:uppercase;color:#f2f0ea;display:inline-flex;align-items:center;gap:9px;
+    background:linear-gradient(180deg,#7e868a,#4d5458 52%,#3a4145);
+    box-shadow:inset 0 1px 0 #ffffff59,inset 0 -2px 0 #00000073,0 0 0 1px #0b0d0f,0 2px 3px #0007}
+  a.btn:hover{filter:brightness(1.16)}
+  a.btn.go{background:linear-gradient(180deg,#3fb872,#1d7645 52%,#14512f);color:#eaffef;
+    box-shadow:inset 0 1px 0 #a5f0c2,inset 0 -2px 0 #00000073,0 0 0 1px #0b0d0f,0 0 14px #4ade8040}
+  .panel{margin-top:12px;background:var(--screen);padding:18px 22px;
+    box-shadow:inset 0 0 0 1px #ffffff0f,0 0 0 3px var(--hull-dk),0 0 0 4px #0b0d0f}
+  .panel h2{margin:0 0 10px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--am)}
+  ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  li{padding-left:16px;position:relative;font-size:15px;line-height:1.5;color:#d8dee5}
+  li:before{content:"▸";position:absolute;left:0;color:var(--dim2);font-size:10px;top:4px}
+  b{color:#fff}
+  code{font-family:var(--mono);background:#000000aa;padding:1px 6px;font-size:.88em;color:var(--am2)}
+  .kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;color:var(--yl);background:#0c0f11;
+    box-shadow:inset 0 0 0 1px #ffffff1f}
+  .note{margin-top:12px;padding:14px 18px;background:#0c3226;color:#a9f2d8;font-size:13.5px;line-height:1.55;
+    box-shadow:inset 0 0 0 1px #4ade804d}
+  .note b{color:#fff}
+  footer{margin-top:22px;font-family:var(--mono);font-size:11.5px;color:var(--dim2);line-height:1.7}
+  footer a{color:var(--am)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="coaming" aria-hidden="true"></div>
+
+  <div class="screen">
+    <div class="kicker">Meeting attention assistant</div>
+    <h1>Spacecadet</h1>
+    <p class="sub">You lost focus. You look over. Two seconds later you know what is being discussed —
+      and whether someone just asked you something.</p>
+    <div class="cta">
+      <a class="btn go" href="spacecadet.html">▶ Launch it</a>
+      <a class="btn" href="spacecadet.html" download>⭳ Download for offline use</a>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>What it does</h2>
+    <ul>
+      <li>Listens to your microphone or the meeting's system audio and transcribes it <b>in your browser</b>.</li>
+      <li>Shows the current topic in text you can read from across the room, plus the last 30 seconds of speech.</li>
+      <li>Fires a loud alert the moment your name or a question aimed at you shows up. That runs on plain
+        pattern matching, so it is instant and works with no account and no network.</li>
+      <li><b>Catch me up</b> builds a prompt, copies it, and opens claude.ai — your own subscription pays,
+        and this page never calls an API.</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>Where your audio goes</h2>
+    <ul>
+      <li>There is <b>no server</b>. This page is a single static file; nothing is uploaded, logged, or stored
+        anywhere but your own browser.</li>
+      <li>By default speech recognition uses the browser's built-in Web Speech engine, which
+        <b>sends audio to Google</b> to be transcribed. That is Chrome's engine, not this app's choice.</li>
+      <li>Want nothing to leave the machine? Settings → speech-to-text engine → <b>Local Whisper</b>,
+        and set the summarizer to <b>local</b>. The app then blocks its own outbound calls and logs every
+        blocked attempt so you can check.</li>
+      <li>The whole thing is one readable file. Open it in a text editor, or read it on GitHub, before you
+        trust it with a microphone.</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>First run</h2>
+    <ul>
+      <li>Press <span class="kbd">S</span> and enter your name — including whatever mangled spellings
+        speech-to-text produces for it. The name alert cannot fire without this.</li>
+      <li>Press <span class="kbd">L</span> and click <b>Allow</b> on the microphone prompt.</li>
+      <li><span class="kbd">C</span> catch me up · <span class="kbd">E</span> export the meeting ·
+        <span class="kbd">Esc</span> panic-hide the whole screen, again to bring it back.</li>
+      <li>For remote Teams or Zoom audio on Windows: switch the source to system audio, share the
+        <b>entire screen</b>, and tick <b>"Also share system audio"</b>. A window share carries no audio.</li>
+    </ul>
+  </div>
+
+  <div class="note">
+    <b>Open this page rather than a downloaded copy if you can.</b> Served over https your browser remembers
+    the microphone permission, so it stops asking at the start of every meeting. Opened from a file on disk it
+    still works, but Chrome re-prompts every single time — that is a browser rule, not a bug.
+  </div>
+
+  <footer>
+    Chrome or Edge. Built for Windows; macOS cannot capture system audio at all, microphone only.<br>
+    Source: <a href="https://github.com/lrgerke-max/spacecadet">github.com/lrgerke-max/spacecadet</a><br>
+    An unofficial fan-styled personal tool. Not affiliated with or endorsed by Lucasfilm or Disney.
+  </footer>
+</div>
+</body>
+</html>
