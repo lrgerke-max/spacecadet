@@ -113,12 +113,17 @@
       <li>Tracks to-dos, issues, decisions and unfamiliar terms as they are said, each with an
         owner where one can be worked out. Unticked to-dos carry into the next meeting.</li>
       <li><b>Catch me up</b> builds a prompt, copies it, and opens claude.ai — your own
-        subscription pays, and this page never calls an API.</li>
+        subscription pays, and this page never calls an API. An Anthropic key is optional and
+        adds an automatic summary loop; at ten hours of meetings a week that runs about
+        <b>$220 a year</b> on Sonnet, and the app shows you the live figure and caps the spend.</li>
     </ul>
   </div>
 
   <div class="card">
-    <h2>Built for a Level 10</h2>
+    <h2>Level 10 mode, when you want it</h2>
+    <p style="margin:0 0 12px;color:var(--txt-2)">Off by default — most meetings are not an L10.
+      Set the meeting type to <b>Leadership / Level 10</b> and this appears; set it back and it
+      goes away.</p>
     <div class="pills">
       <span class="pill">Check-in</span><span class="pill a">Scorecard</span>
       <span class="pill b">Rocks</span><span class="pill c">Headlines</span>
@@ -169,10 +174,11 @@
   <div class="card">
     <h2>First run</h2>
     <ul>
-      <li>Press <span class="kbd">S</span> and enter your name — including whatever mangled
-        spellings speech-to-text produces for it. The name alert cannot fire without this.</li>
-      <li>Add who is in the room in the same panel, then press
-        <span class="kbd">1</span>–<span class="kbd">9</span> as each one speaks.</li>
+      <li>Setup opens by itself and asks what people call you — including whatever mangled
+        spellings speech-to-text produces for it. The name alert cannot fire without this, so it
+        is asked first rather than buried in a settings panel.</li>
+      <li>It also takes who else is in the room, so you can press
+        <span class="kbd">1</span>–<span class="kbd">9</span> to tag each person as they speak.</li>
       <li>Press <span class="kbd">L</span> and click <b>Allow</b> on the microphone prompt.</li>
       <li><span class="kbd">C</span> catch me up · <span class="kbd">B</span> bookmark ·
         <span class="kbd">T</span> transcript · <span class="kbd">R</span> snapshot ·

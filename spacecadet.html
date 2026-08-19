@@ -396,7 +396,11 @@
   }
   #sensBar .lock{font-size:12px}
 
-  /* Level 10 agenda segments */
+  /* Level 10 agenda segments. Hidden unless the meeting type says this IS an
+     L10 — most meetings are not, and a row of EOS jargon on a regular call is
+     clutter in the one place where clutter costs the most. */
+  body:not(.eos) #segbar,
+  body:not(.eos) .eosOnly{display:none !important}
   #segbar{
     flex:0 0 auto;display:flex;gap:4px;padding:7px 12px;background:var(--card);
     border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;
@@ -698,7 +702,7 @@
         <button data-x="md">Markdown (.md)</button>
         <button data-x="txt">Plain text (.txt)</button>
         <button data-x="json">Structured data (.json)</button>
-        <button data-x="strety">Copy for Strety</button>
+        <button data-x="strety" class="eosOnly">Copy for Strety</button>
       </div>
     </span>
     <button class="btn sm" id="btnNew" title="Clear the meeting and start fresh">✧ New meeting</button>
@@ -720,7 +724,7 @@
   <!-- Who is speaking. Click a name (or press its number) to attribute what
        follows to them; it stays until you change it. -->
   <div id="rosterbar">
-    <span id="rosterEmpty">Add who is in the room in Settings, then click a name as they speak &rarr;</span>
+    <span id="rosterEmpty">Add who is in the room &rarr; then click a name, or press its number, as they speak</span>
     <button class="btn sm icon" id="btnRosterAdd" title="Add someone to the room">+</button>
   </div>
 
@@ -913,12 +917,38 @@
   </div>
 </div>
 
+<!-- Setup, shown on the first launch rather than at the moment someone presses
+     Start. The name comes FIRST: it is the single input the headline feature
+     cannot work without, and asking for it fifteen settings deep meant the
+     alert quietly never fired for anyone who did not go looking. -->
 <div class="scrim hidden" id="firstRunScrim">
   <div class="modal">
-    <header><h2>Before you start</h2></header>
-    <div class="body">
-      <p style="margin-top:0">SpaceCadet turns speech into text so it can tell you what is being discussed and
-        when someone asks you something. Choose where that transcription happens. You can change it later
+    <header><h2 id="setupTitle">Set up SpaceCadet</h2>
+      <span class="hint" id="setupStepTag" style="margin-left:auto">Step 1 of 2</span></header>
+
+    <div class="body" id="setupStep1">
+      <p style="margin-top:0">SpaceCadet listens to the meeting and tells you what is being discussed —
+        and the moment somebody asks <b>you</b> something. For that second part it has to know what you
+        are called.</p>
+      <div class="row">
+        <label for="setupNames">What do people call you in meetings?</label>
+        <input type="text" id="setupNames" placeholder="e.g. Alex, Alexandra, Lex" autocomplete="off"
+          spellcheck="false" aria-describedby="setupNamesHint">
+        <div class="hint" id="setupNamesHint">Add every version people actually say, separated by commas —
+          nicknames included. Speech-to-text mangles names, so if yours comes back wrong you can add the
+          mangled spelling later in Settings.</div>
+      </div>
+      <div class="row">
+        <label for="setupWho">Who else is in the room? <span class="hint" style="font-weight:400">(optional)</span></label>
+        <input type="text" id="setupWho" placeholder="Sarah, Mike, Brooke" autocomplete="off" spellcheck="false">
+        <div class="hint">Puts them in the bar at the top so you can tag who is speaking with the number
+          keys. You can add people any time.</div>
+      </div>
+    </div>
+
+    <div class="body hidden" id="setupStep2">
+      <p style="margin-top:0">Speech has to be turned into text somewhere. This is the one decision that
+        determines whether any audio leaves this laptop, so it is asked plainly. You can change it later
         in Settings.</p>
       <div class="choice" id="chooseLocal">
         <div class="ct">On this device <span class="pill good">Recommended</span></div>
@@ -932,7 +962,12 @@
           personnel, board, or other confidential conversations.</div>
       </div>
     </div>
-    <footer><span class="hint">This choice is remembered on this device.</span></footer>
+
+    <footer>
+      <button class="btn primary" id="setupNext">Continue</button>
+      <button class="btn" id="setupBack" style="display:none">Back</button>
+      <span class="hint" id="setupFoot">Takes about fifteen seconds. Remembered on this device.</span>
+    </footer>
   </div>
 </div>
 
@@ -987,7 +1022,7 @@
     <footer>
       <button class="btn primary" id="reviewTranscript">Read full transcript</button>
       <button class="btn" data-x3="md">Export .md</button>
-      <button class="btn" data-x3="strety">Copy for Strety</button>
+      <button class="btn eosOnly" data-x3="strety">Copy for Strety</button>
       <button class="btn" data-close="reviewScrim">Close</button>
     </footer>
   </div>
@@ -1273,7 +1308,7 @@
       </div>
       <div class="hint" style="margin-top:8px"><span class="kbd">1</span>–<span class="kbd">9</span> mark who is
         speaking, in the order they appear in the bar at the top. This is the one you want under your fingers
-        during a Level 10 — it is faster than reaching for the mouse, and it is what gives to-dos an owner.</div>
+        while the meeting runs — it is faster than reaching for the mouse, and it is what gives to-dos an owner.</div>
       <div class="hint" style="margin-top:8px">Keys are ignored while you are typing in a field, so a name with
         a <b>c</b> in it will not fire catch-up. <span class="kbd">Esc</span> is the exception: it works from
         anywhere, always.</div>
@@ -1516,12 +1551,19 @@ function buildSystemPrompt(profile, context) {
 '  "mentioned". Be conservative — a false alarm is worse than a miss here.',
 '- talking_points: only when user_addressed is non-null. 2-3 short things the user could actually',
 '  say, grounded in what was discussed. Not generic filler.',
-'- This team runs EOS/Traction and calls things by its names. Use them:',
-'  * decisions: things actually settled.',
-'  * actions: EOS TO-DOS. Short, owned, and due inside seven days. Set "due" to a plain',
-'    date or day if one was stated, otherwise the empty string. Never invent one.',
-'  * issues: things RAISED but NOT resolved — the IDS list. An unresolved concern is an',
-'    issue, not a decision. This is the bucket people most often need later.',
+(eosOn()
+  ? '- This team runs EOS/Traction and calls things by its names. Use them:\n' +
+    '  * decisions: things actually settled.\n' +
+    '  * actions: EOS TO-DOS. Short, owned, and due inside seven days. Set "due" to a plain\n' +
+    '    date or day if one was stated, otherwise the empty string. Never invent one.\n' +
+    '  * issues: things RAISED but NOT resolved — the IDS list. An unresolved concern is an\n' +
+    '    issue, not a decision. This is the bucket people most often need later.'
+  : '- Sort what you capture into three buckets:\n' +
+    '  * decisions: things actually settled.\n' +
+    '  * actions: something a named person committed to do. Set "due" to a plain date or day\n' +
+    '    if one was stated, otherwise the empty string. Never invent one.\n' +
+    '  * issues: things RAISED but NOT resolved. An unresolved concern is an issue, not a\n' +
+    '    decision. This is the bucket people most often need later.'),
 '- decisions / actions / issues / glossary: only NEW items from this chunk. Never repeat items',
 '  you have already reported. Empty arrays are correct and expected most of the time.',
 '- glossary: only genuinely non-obvious acronyms, jargon, or proper nouns.',
@@ -1552,6 +1594,10 @@ var STOPWORDS = (
 'take taken talk talking tell than that thats the their theirs them themselves then there theres these they '+
 'theyre theyve thing things think this those though thought three through thus time to today together too took '+
 'total two under until up upon us use used using usually very want was wasnt way we well were weve what whatever '+
+'already ahead behind four five six seven eight nine ten eleven twelve twenty thirty forty fifty hundred thousand '+
+'million billion half whole bunch couple bit lots plenty '+
+'especially particularly essentially generally currently recently certainly absolutely definitely potentially '+
+'honestly frankly clearly simply mainly mostly overall anyway regarding concerning '+
 'when where whether which while who whole whom why will with within without wont work would wouldnt yeah year '+
 'years yes yet you youd youll your youre yours yourself youve '+
 /* speech filler + transcription noise */
@@ -1684,7 +1730,7 @@ var DEFAULTS = {
   topicTh: 0.35,
   profile: '',
   context: '',
-  discreet: true,              // quiet by default; a loud banner beside a colleague is worse
+  discreet: false,             // V switches it on and it sticks; see the note in the retune below
   _tuningRev: 0                // bookkeeping for the one-time retune below, not a user setting
 };
 
@@ -1731,10 +1777,19 @@ for (var _k in SETTING_RANGE) if (typeof CFG[_k] === 'number') CFG[_k] = clampSe
    This adopts a new default ONLY where the stored value is still the old
    default — a number someone deliberately dragged a slider to is left alone.
    Bump TUNING_REV when defaults change again; each revision applies once. */
-var TUNING_REV = 1;
+var TUNING_REV = 2;
 if (CFG._tuningRev < TUNING_REV) {
-  if (CFG.chunkSec === 24) CFG.chunkSec = 15;        // faster first text out of Whisper
-  if (CFG.alertTtlSec === 120) CFG.alertTtlSec = 30; // an alert two minutes stale is a lie
+  if (CFG._tuningRev < 1) {
+    if (CFG.chunkSec === 24) CFG.chunkSec = 15;        // faster first text out of Whisper
+    if (CFG.alertTtlSec === 120) CFG.alertTtlSec = 30; // an alert two minutes stale is a lie
+  }
+  /* rev 2: discreet stops being the default. It shrinks NOW to 19px and
+     renders the ALERT as an ordinary grey card, so shipping it on meant the
+     two things this app exists for arrived switched off. Unlike the numbers
+     above, a boolean cannot tell a deliberate choice from an untouched default
+     — both read `true` — so anyone who genuinely wanted discreet is flipped
+     once and presses V again. */
+  if (CFG._tuningRev < 2 && CFG.discreet === true) CFG.discreet = false;
   CFG._tuningRev = TUNING_REV;
   saveCfg();
 }
@@ -2074,7 +2129,7 @@ function computeChips(list) {
 
   var uniScores = {};
   Object.keys(c.uni).forEach(function (k) {
-    if (c.uni[k] < 2 && list.length > 6) return;    // one mention is noise once there is enough speech
+    if (c.uni[k] < 2 && c.total > 70) return;      // one mention is noise once there is enough speech
     uniScores[k] = score(k, c.uni[k]);
   });
 
@@ -3258,16 +3313,16 @@ async function startListening() {
 
   /* One-time choice of where transcription happens. The reviewers were unanimous
      that "audio goes to Google" must be an explicit decision, not a tooltip. */
-  if (!CFG.firstRunDone) { showFirstRun(); return; }
+  if (!CFG.firstRunDone) { showFirstRun({ thenStart: true }); return; }
 
   /* Nobody's voice is captured until the operator states they have told the room.
      Per session, never remembered — a stale acknowledgement is not consent. */
   if (!consentGiven) { showConsent(); return; }
 
-  if (!CFG.names || !CFG.names.trim()) {
-    toast('Add your name in Settings first — the name alert cannot fire without it.', 'warn', 8000);
-    openSettings();
-    return;
+  if (!hasName() && !warnedNoName) {
+    warnedNoName = true;
+    toast('Starting without a name — everything works except the name alert. Add it in Settings › Attention.',
+          'warn', 9000);
   }
 
   /* A sensitive meeting must not use a cloud recogniser. The banner promises
@@ -3345,7 +3400,7 @@ async function startListening() {
       toast('On-device transcription could not load, so nothing was started. Choose again — the ' +
             'alternative sends your audio to Google.', 'err', 13000);
       renderSoon();
-      showFirstRun();
+      showFirstRun({ step: 2, thenStart: true });
       return;
     }
     stopListening(); renderSoon(); return;
@@ -3687,6 +3742,35 @@ async function callAnthropic(system, userContent, opts) {
     }
   }
   return { text: text, data: data, latency: latency };
+}
+
+/* What this actually costs, from the same numbers the meter bills against,
+   because "a few thousand tokens" is not an answer anyone can take to a CFO.
+
+   The system prompt is measured live rather than assumed — it grows with the
+   profile and pre-meeting context someone types in. The rest is per ambient
+   call: the transcript window since the last call, plus the previous state
+   object echoed back in, plus the structured state object that comes out.
+   ~3.7 characters per token is the usual ratio for English prose.
+
+   This is an UPPER BOUND. ambientTick() skips a call entirely when fewer than
+   15 new words arrived, so a meeting with any silence in it costs less. */
+var TOK_PER_CHAR = 1 / 3.7;
+var EST_PRIOR_STATE_TOK = 250;    // the previous state object, sent back as context
+var EST_OUTPUT_TOK = 350;         // the structured state object that comes back
+var EST_WORDS_PER_MIN = 150;      // conversational speech
+var EST_TOK_PER_WORD = 1.35;
+
+function costEstimate(model, intervalSec, hoursPerWeek) {
+  var pr = priceOf(model || CFG.model);
+  var iv = intervalSec || CFG.intervalSec;
+  var sysTok = buildSystemPrompt(CFG.profile, CFG.context).length * TOK_PER_CHAR;
+  var windowTok = (iv / 60) * EST_WORDS_PER_MIN * EST_TOK_PER_WORD;
+  var inTok = sysTok + windowTok + EST_PRIOR_STATE_TOK;
+  var perCall = (inTok / 1e6) * pr.in + (EST_OUTPUT_TOK / 1e6) * pr.out;
+  var perHour = perCall * (3600 / iv);
+  return { perCall: perCall, perHour: perHour,
+           perYear: perHour * (hoursPerWeek || 10) * 52 };
 }
 
 /* Ambient incremental summarisation state machine. */
@@ -4617,17 +4701,67 @@ function uiConfirm(title, body, okLabel, cb) {
   show('confirmScrim');
 }
 
-/* One-time, explicit choice of where transcription happens. */
-function showFirstRun() { show('firstRunScrim'); }
+/* ---- FIRST-RUN SETUP ------------------------------------------------------
+   Two steps: who you are, then where transcription happens. It opens on load
+   rather than at the moment someone presses Start, because a person about to
+   join a meeting has no patience for a form and will click past anything in
+   their way. `setupThenStart` distinguishes the two ways in: opened at launch
+   it just closes when done, opened because they pressed Start it goes on to
+   start listening. */
+var setupStep = 1, setupThenStart = false, warnedNoName = false;
+
+function showFirstRun(opts) {
+  opts = opts || {};
+  setupThenStart = !!opts.thenStart;
+  /* Someone who already told us their name never sees that step again — that
+     includes the re-choose after an on-device model fails to load. */
+  setSetupStep(opts.step || (hasName() ? 2 : 1));
+  show('firstRunScrim');
+}
+
+function hasName() { return !!(CFG.names && CFG.names.trim()); }
+
+function setSetupStep(n) {
+  setupStep = n;
+  var one = n === 1;
+  $('setupStep1').classList.toggle('hidden', !one);
+  $('setupStep2').classList.toggle('hidden', one);
+  $('setupStepTag').textContent = 'Step ' + n + ' of 2';
+  $('setupNext').style.display = one ? '' : 'none';
+  $('setupBack').style.display = one ? 'none' : '';
+  $('setupFoot').textContent = one
+    ? 'Takes about fifteen seconds. Remembered on this device.'
+    : 'This choice is remembered on this device.';
+  if (one) {
+    $('setupNames').value = CFG.names || '';
+    $('setupWho').value = CFG.participants || '';
+    setTimeout(function () { try { $('setupNames').focus(); } catch (e) {} }, 30);
+  }
+}
+
+/* Step 1 -> 2. The name is not enforced — someone who genuinely wants to skip
+   it can, and the app still does everything except the name alert — but the
+   consequence is stated rather than left to be discovered mid-meeting. */
+function setupContinue() {
+  CFG.names = String($('setupNames').value || '').slice(0, 500);
+  var who = String($('setupWho').value || '').slice(0, 300);
+  if (who !== CFG.participants) { CFG.participants = who; syncParticipantsToRoster(); renderRoster(); }
+  saveCfg(); buildNameRegex(); syncSettingsUI();
+  if (!hasName()) toast('No name set — everything else works, but the name alert cannot fire. ' +
+                        'Add it in Settings whenever you like.', 'warn', 8000);
+  setSetupStep(2);
+}
+
 function chooseEngine(which) {
   if (which === 'local') { CFG.engine = 'whisper'; CFG.allowCdn = true; }
   else { CFG.engine = 'webspeech'; CFG.allowCdn = false; }
   CFG.firstRunDone = true;
   saveCfg(); syncSettingsUI(); hide('firstRunScrim');
-  toast(which === 'local'
-    ? 'On-device transcription selected. The model downloads once, then audio stays on this machine.'
-    : 'Google speech selected. Switch to on-device in Settings for confidential meetings.', 'ok', 8000);
-  startListening();
+  var msg = which === 'local'
+    ? 'On-device transcription selected — the model downloads once, then audio stays on this machine.'
+    : 'Google speech selected. Switch to on-device in Settings for confidential meetings.';
+  if (setupThenStart) { toast(msg, 'ok', 8000); startListening(); }
+  else toast(msg + ' Press L when the meeting starts.', 'ok', 9000);
 }
 
 /* Per-session consent. Never remembered across loads. */
@@ -4636,6 +4770,12 @@ function showConsent() {
   $('consentGo').disabled = true;
   show('consentScrim');
 }
+
+/* Is this an EOS/Level 10 meeting? Everything EOS-flavoured — the agenda
+   pills, the Strety paste block, the IDS wording — hangs off this one answer
+   so a regular meeting never has to look at any of it. */
+function eosOn() { return CFG.meetingType === 'leadership'; }
+function syncEosUI() { document.body.classList.toggle('eos', eosOn()); }
 
 /* Level 10 agenda segment. */
 function setSegment(name) {
@@ -4997,7 +5137,7 @@ function exportMarkdown() {
     : '_none recorded_');
   L.push('');
 
-  L.push('## Issues (IDS)');
+  L.push(eosOn() ? '## Issues (IDS)' : '## Issues');
   L.push(MEET.issues.length
     ? MEET.issues.map(function (d) {
         return '- ' + d.text + (d.segment ? ' _(' + d.segment + ')_' : '') + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
@@ -5134,6 +5274,9 @@ function togglePanic() {
     Array.prototype.forEach.call(document.querySelectorAll('.scrim'), function (n) { n.classList.add('hidden'); });
     confirmCb = null;
     closeSettings();
+    /* The export dropdown is not a scrim, so it survived the sweep and floated
+       over the panel once the screen came back. */
+    $('exportMenu').classList.add('hidden');
     try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
     titleBefore = document.title;
     document.title = 'Document1';
@@ -5213,9 +5356,12 @@ function syncSettingsUI() {
            '<span class="pv ' + r[1][1] + '">' + esc(r[1][0]) + '</span></div>';
   }).join('');
 
-  var p = priceOf(CFG.model);
-  $('priceHint').textContent = p.label + ' — $' + p.in.toFixed(2) + ' per 1M input tokens, $' +
-    p.out.toFixed(2) + ' per 1M output. A typical ambient call is a few thousand input tokens.';
+  var p = priceOf(CFG.model), est = costEstimate();
+  $('priceHint').innerHTML = p.label + ' — $' + p.in.toFixed(2) + ' per 1M input tokens, $' +
+    p.out.toFixed(2) + ' per 1M output.<br><b>About $' + est.perHour.toFixed(2) +
+    ' per hour of meeting</b>, so roughly <b>$' + Math.round(est.perYear) +
+    ' a year</b> at ten hours a week. Upper bound: a call is skipped whenever fewer ' +
+    'than ~15 new words arrived, so real usage runs below this. Doubling the interval halves it.';
 
   $('backendHint').innerHTML = {
     handoff: 'Free. “Catch me up” copies a prompt and opens claude.ai — <b>your Pro subscription pays</b>. ' +
@@ -5352,6 +5498,17 @@ var LOCKED_TYPES = { personnel: 1, board: 1 };
 function applyMeetingType() {
   var t = CFG.meetingType || 'standard';
   var hint = $('meetingTypeHint');
+
+  /* Leaving the Level 10 type must not strand a segment stamp on everything
+     captured afterwards, so the current segment goes with it. */
+  syncEosUI();
+  if (!eosOn() && CFG.segment) {
+    CFG.segment = '';
+    Array.prototype.forEach.call(document.querySelectorAll('#segbar .segp'), function (b) {
+      b.classList.remove('on');
+    });
+  }
+
   if (LOCKED_TYPES[t]) {
     if (!CFG.sensitive) {
       CFG.sensitive = true; saveCfg();
@@ -5361,7 +5518,10 @@ function applyMeetingType() {
     if (hint) hint.innerHTML = '<b>Sensitive mode is forced on for this type.</b> Export, the claude.ai ' +
       'handoff and all API calls stay disabled while it is selected.';
   } else if (hint) {
-    hint.textContent = 'Personnel matters and board executive sessions force sensitive mode on.';
+    hint.innerHTML = eosOn()
+      ? 'The Level 10 agenda segments are showing above the transcript, and exports use EOS wording.'
+      : 'Pick <b>Leadership / Level 10</b> to add the EOS agenda segments and the Strety paste block. ' +
+        'Personnel matters and board executive sessions force sensitive mode on.';
   }
   renderSoon();
 }
@@ -5451,6 +5611,12 @@ function bindUI() {
   /* first-run engine choice */
   $('chooseLocal').addEventListener('click', function () { chooseEngine('local'); });
   $('chooseGoogle').addEventListener('click', function () { chooseEngine('google'); });
+  $('setupNext').addEventListener('click', setupContinue);
+  $('setupBack').addEventListener('click', function () { setSetupStep(1); });
+  $('setupNames').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); setupContinue(); } });
+  $('setupWho').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); setupContinue(); } });
 
   /* consent */
   $('consentAck').addEventListener('change', function () { $('consentGo').disabled = !this.checked; });
@@ -5619,6 +5785,7 @@ function tick() {
 /* ===================================================================== 25. init */
 
 function init() {
+  syncEosUI();
   syncSettingsUI();
   bindSettings();
   bindUI();
@@ -5649,9 +5816,11 @@ function init() {
           clockText(now() - MEET.startedAt) + ' elapsed.', 'ok', 7000);
   }
 
-  if (!CFG.names) {
-    toast('Add your name variants in Settings — the name alert is the fastest thing in this app and it ' +
-          'needs to know what you are called.', 'warn', 11000);
+  /* Ask at launch, not at the moment they press Start. Someone joining a
+     meeting will click past anything standing between them and the button. */
+  if (!CFG.firstRunDone) showFirstRun();
+  else if (!hasName()) {
+    toast('No name set — the name alert cannot fire without it. Settings › Attention.', 'warn', 11000);
   }
 
   syncSettingsInert();

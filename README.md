@@ -9,11 +9,10 @@ discussed *right now*, and whether someone just asked you something.
 ## Quick start
 
 1. Open `spacecadet.html` in Chrome or Edge on Windows.
-2. Pick where transcription happens — on-device or Google's speech service. It asks once.
-3. Settings → **My name variants**. The name alert is the fastest thing in the app and it
-   needs to know what you are called — including the manglings speech-to-text produces.
-4. Settings → **Who is in the room**. Add the people; then press `1`–`9` as each one speaks.
-5. Click **Start listening**, confirm you have told the room, and allow the microphone.
+2. Setup opens by itself and asks two things: **what people call you** (the name alert cannot
+   fire without it, so it is asked first rather than buried in Settings), and **where
+   transcription happens** — on-device or Google's speech service.
+3. Click **Start listening**, confirm you have told the room, and allow the microphone.
 
 There is no API key step, because there is no API key requirement.
 
@@ -40,9 +39,13 @@ code cannot do: resolving what "that" referred to, and what kind of answer is wa
   direction of a sensible answer. The whole point is that you can answer from it cold.
 - **Now** — the current topic in text readable at a glance, with the last stretch of speech
   under it and the recent topics beside it.
-- **Level 10 segments** — Check-in, Scorecard, Rocks, Headlines, To-dos, IDS, Conclude.
-  Tap one and everything captured from then on is stamped with it, so the export reads as an
-  agenda log rather than a word cloud. IDS runs a clock on the issue being discussed.
+- **Level 10 segments** — *off by default.* Most meetings are not an L10, and a row of EOS
+  jargon is clutter in the one place where clutter costs most. Set the meeting type to
+  **Leadership / Level 10** in Settings and the segments appear — Check-in, Scorecard, Rocks,
+  Headlines, To-dos, IDS, Conclude — along with the Strety paste block and EOS wording in the
+  export. Tap a segment and everything captured from then on is stamped with it, so the export
+  reads as an agenda log rather than a word cloud. IDS runs a clock on the issue being
+  discussed. Switch the type back and it all disappears again.
 - **To-dos, issues, decisions, glossary** — captured as they are said, each with an owner
   where one can be worked out. Unticked to-dos carry into your next meeting.
 - **Bookmarks** (`B`) — mark a moment you want to come back to, with the surrounding context.
@@ -56,6 +59,13 @@ rendering code — the UI cannot tell which one produced what it is showing.
 |---|---|---|
 | **`handoff`** (default) | free | Catch-me-up builds a prompt, copies it, and opens claude.ai. Your Pro subscription pays. This page makes no API call. |
 | `api` | metered | Adds the ambient auto-summary and reference resolution via the Anthropic API with your own key. The only thing gated behind a key. |
+
+At the default 90-second interval, `api` mode costs roughly **$0.43 per hour of meeting** on
+Sonnet 5 — about **$220 a year at ten hours a week**. Haiku 4.5 is about a third of that
+(~$74/yr), Opus 5 about $370. Those are upper bounds: a call is skipped whenever fewer than
+~15 new words arrived, so silence is free, and doubling the interval halves the bill. Settings
+shows the live figure for your own model and interval, and a per-meeting spend cap stops it
+dead at a number you set.
 | `local` | free | Nothing leaves the machine. The outbound choke point is hard-disabled and blocked attempts are logged. |
 
 Every outbound request goes through a single function, so the network boundary is auditable
@@ -138,8 +148,9 @@ Strety and Teams. Everything is single-column and vertical, and holds from 380px
 width. Vertical space is the scarce resource, so the transcript takes whatever is left and
 everything else is sized to get out of its way.
 
-Two deliberate exemptions: **discreet mode** drops the colour and compacts everything, and
-the **panic screen** is not themed at all — it is a plain white document, because it is the
+Two deliberate exemptions: **discreet mode** (`V`) drops the colour, shrinks the headline and
+renders the alert as an ordinary card — off by default, because it switches off the two things
+the app exists for; and the **panic screen** is not themed at all — it is a plain white document, because it is the
 one screen someone else might see.
 
 Motion is transform/opacity only and honours `prefers-reduced-motion`. Nothing animates a

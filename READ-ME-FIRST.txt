@@ -9,13 +9,12 @@ WHAT IT IS
 HOW TO OPEN IT
   1. Save spacecadet.html somewhere you will keep it (Desktop or Documents).
   2. Double-click it. It opens in Chrome or Edge.
-  3. It asks once where transcription should happen. Read that screen; the
-     short version is under WHERE YOUR AUDIO GOES below.
-  4. Press S. Enter your name in "My name variants" - including whatever
-     mangled spellings speech-to-text produces for it. The name alert cannot
-     fire without this.
-  5. In the same panel, add who is in the room.
-  6. Press L, tick the box confirming you have told the room, and click Allow
+  3. Setup opens by itself and asks two things:
+       - What people call you. The name alert cannot fire without this, which
+         is why it is the first thing asked. Add nicknames too.
+       - Where transcription happens. Read that screen; the short version is
+         under WHERE YOUR AUDIO GOES below.
+  4. Press L, tick the box confirming you have told the room, and click Allow
      on the microphone prompt.
 
   There is nothing to install. No account, no API key, no sign-up.
@@ -28,7 +27,7 @@ KEYS
   R    meeting snapshot
   E    export the meeting as a Markdown file
   D    dismiss the alert
-  V    discreet mode (compact and low-key)
+  V    discreet mode (compact, no colour, quiet alert - off by default)
   S    settings
   1-9  mark who is speaking, in the order they appear in the bar at the top
   Esc  blank the screen instantly. Press it again to bring it back.
@@ -39,16 +38,22 @@ KEYS
   The number keys are the ones worth learning. Tapping a name as each person
   starts talking is what gives a to-do a real owner in the export.
 
-DURING A LEVEL 10
-  Tap the segment you are in - Check-in, Scorecard, Rocks, Headlines, To-dos,
-  IDS, Conclude - and everything captured from then on is stamped with it, so
-  the export reads as an agenda log rather than a word cloud. IDS runs a clock
-  on the issue being discussed.
+IF THIS IS A LEVEL 10 (and only then)
+  The EOS agenda segments are OFF unless you ask for them. Most meetings are
+  not an L10 and the row of jargon is just clutter.
 
-  "Copy for Strety" in the export menu gives you a block that pastes straight
-  into the matching To-dos, Issues and Headlines lists.
+  To turn them on: Settings -> This meeting -> Type -> "Leadership / Level 10".
+  You then get the segment row - Check-in, Scorecard, Rocks, Headlines, To-dos,
+  IDS, Conclude. Tap the one you are in and everything captured from then on is
+  stamped with it, so the export reads as an agenda log rather than a word
+  cloud. IDS runs a clock on the issue being discussed.
 
-  To-dos you never tick carry forward into your next meeting automatically.
+  That setting also adds "Copy for Strety" to the export menu, which gives you
+  a block that pastes straight into the matching To-dos, Issues and Headlines
+  lists. Switch the type back to Standard and all of it disappears again.
+
+  To-dos you never tick carry forward into your next meeting automatically,
+  whichever type of meeting it is.
 
 WHERE YOUR AUDIO GOES
   There is no server. This is one static file; nothing is uploaded, logged, or
@@ -112,6 +117,17 @@ REMOTE MEETING AUDIO (Windows only)
 
   Note that a shared system-audio stream is one mixed channel, so automatic
   voice recognition does not work with it. Microphone only.
+
+WHAT AN API KEY WOULD COST
+  You do not need one. The default mode uses your own claude.ai subscription
+  and this page never calls an API.
+
+  If you do add a key, at the default 90-second interval it runs about 43
+  cents per hour of meeting on Sonnet - roughly $220 a year at ten hours a
+  week. Haiku is about a third of that, Opus about $370. Those are upper
+  bounds: nothing is sent when nobody is talking, and doubling the interval
+  halves the bill. Settings shows the live number for your own settings, and
+  there is a per-meeting spend cap that stops it dead.
 
 REQUIREMENTS
   Chrome or Edge. Built and tuned for Windows.
