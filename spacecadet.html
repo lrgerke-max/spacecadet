@@ -456,6 +456,18 @@
     flex:0 0 auto;cursor:pointer}
   li.itemDone{opacity:.5;text-decoration:line-through;text-decoration-color:var(--txt-3)}
   li.itemDone .carryTag,li.itemDone .autoTag,li.itemDone .segTag{text-decoration:none}
+  .qRow{display:flex;flex-direction:column;gap:2px}
+  .qWho{font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--txt-3)}
+  .qWho.me{color:#b91c1c}
+  .bmRow{padding:8px 0;border-bottom:1px solid var(--line-2)}
+  .bmRow:last-child{border-bottom:0}
+  .bmHead{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--txt)}
+  .bmTopic{font-weight:500;color:var(--txt-2)}
+  .bmHead .rmBtn{margin-left:auto}
+  .bmCtx{font-size:12px;color:var(--txt-2);line-height:1.45;margin:3px 0 5px;overflow-wrap:anywhere}
+  .bmNote{width:100%;font-size:12.5px;padding:5px 7px;border:1px solid var(--line);
+    border-radius:var(--radius-sm);background:var(--bg)}
+  .bmNote:focus{outline:none;border-color:var(--org);box-shadow:0 0 0 3px #f5822024}
   .carryTag{font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;
     border-radius:3px;padding:0 4px;margin-left:6px;letter-spacing:.02em}
   .autoTag{font-size:9.5px;font-weight:700;color:var(--txt-3);background:var(--bg);border:1px solid var(--line);
@@ -638,6 +650,7 @@
 
     <span id="sbSpacer2" style="flex:1 1 auto"></span>
     <button class="btn sm" id="btnDiscreet" title="Compact, low-key layout">◐ Discreet</button>
+    <button class="btn sm" id="btnBookmark" title="Mark this moment">&#128278; Bookmark <span class="k">B</span></button>
     <button class="btn sm" id="btnExport" title="Download the meeting as Markdown">⭳ Export <span class="k">E</span></button>
     <button class="btn sm" id="btnNew" title="Clear the meeting and start fresh">✧ New meeting</button>
     <button class="btn sm" id="btnSettings">⚙ Settings <span class="k">S</span></button>
@@ -754,6 +767,16 @@
     </div>
 
     <div class="col">
+
+      <details class="panel" id="pQuestions">
+        <summary>Recent questions <span class="count zero" id="cQuestions">0</span></summary>
+        <div class="body"><ul id="lQuestions"><li class="none">None yet.</li></ul></div>
+      </details>
+
+      <details class="panel" id="pBookmarks">
+        <summary>Bookmarks <span class="count zero" id="cBookmarks">0</span></summary>
+        <div class="body"><div id="lBookmarks"><div class="none">Press <span class="kbd">B</span> to mark a moment.</div></div></div>
+      </details>
 
       <details class="panel" id="pTimeline" open>
         <summary>Topic timeline <span class="count zero" id="cTimeline">0</span></summary>
@@ -1523,7 +1546,10 @@ function sanitizeRoster(v) {
             return { id: String(r.id || ('s' + Math.random().toString(36).slice(2))),
                      name: String(r.name).slice(0, 40),
                      print: Array.isArray(r.print) ? r.print.slice(0, 32).map(Number) : null,
-                     enrolled: !!r.enrolled && Array.isArray(r.print) };
+                     enrolled: !!r.enrolled && Array.isArray(r.print),
+                     samples: isFinite(r.samples) ? Math.max(0, Math.min(99, +r.samples)) : 0,
+                     createdAt: isFinite(r.createdAt) ? +r.createdAt : 0,
+                     lastSeen: isFinite(r.lastSeen) ? +r.lastSeen : 0 };
           });
 }
 
@@ -1585,6 +1611,7 @@ var MEET = {
   convo: { happened: '', happenedAt: 0, issueKind: 'none', issueText: '',
            question: null, confidence: '', at: 0 },
   questionLog: [],   // {t,text,target,askedBy,...} — recent questions, any target
+  bookmarks: [],     // {t, spk, topic, context, note}
   llmBullets: [],
   llmTalkingPoints: [],
   llmAt: 0
@@ -1640,6 +1667,7 @@ function restoreMeeting() {
       at: isFinite(pc.at) ? +pc.at : 0
     } : { happened: '', happenedAt: 0, issueKind: 'none', issueText: '', question: null, confidence: '', at: 0 };
     MEET.questionLog = arrOf(p.questionLog, function (q) { return q && typeof q.text === 'string'; }).slice(-30);
+    MEET.bookmarks = arrOf(p.bookmarks, function (x) { return x && typeof x === 'object' && isFinite(x.t); }).slice(-100);
     reindexItems();
     return true;
   } catch (e) { return false; }
@@ -1664,7 +1692,7 @@ function doSaveMeeting() {
       savedAt: now(),
       startedAt: MEET.startedAt,
       frags: MEET.frags.slice(-n),
-      convo: MEET.convo, questionLog: MEET.questionLog.slice(-30),
+      convo: MEET.convo, questionLog: MEET.questionLog.slice(-30), bookmarks: MEET.bookmarks.slice(-100),
       decisions: MEET.decisions.slice(-itemCap), issues: MEET.issues.slice(-itemCap),
       actions: MEET.actions.slice(-itemCap), glossary: MEET.glossary.slice(-itemCap),
       timeline: MEET.timeline.slice(-200), alerts: MEET.alerts.slice(-40), cost: MEET.cost,
@@ -1706,7 +1734,7 @@ function resetMeeting() {
   MEET.lastSentT = 0; MEET.llmTopic = ''; MEET.llmBullets = []; MEET.llmTalkingPoints = []; MEET.llmAt = 0;
   MEET.convo = { happened: '', happenedAt: 0, issueKind: 'none', issueText: '',
                  question: null, confidence: '', at: 0 };
-  MEET.questionLog = [];
+  MEET.questionLog = []; MEET.bookmarks = [];
   reindexItems();
   if (carried.length || openIssues.length) {
     toast(carried.length + ' open to-do' + (carried.length === 1 ? '' : 's') + ' and ' + openIssues.length +
@@ -1951,6 +1979,24 @@ function buildNameRegex() {
 }
 
 var lastNameHitAt = 0;
+var lastOtherHitAt = 0;
+
+/* Does a roster name that is NOT the user appear close before the question?
+   Vocatives sit at the start of the clause ("Sarah, can you..."), so proximity
+   before the match is the signal, not mere presence anywhere in the fragment. */
+function otherPersonAddressed(text, qIdx) {
+  if (!CFG.roster || !CFG.roster.length) return null;
+  var mine = buildNameRegex();
+  var window = text.slice(Math.max(0, qIdx - 60), qIdx + 10);
+  for (var i = 0; i < CFG.roster.length; i++) {
+    var nm = String(CFG.roster[i].name || '').trim();
+    if (nm.length < 2) continue;
+    if (mine && mine.test(nm)) continue;                 // that roster entry IS the user
+    var re = new RegExp('\\b' + nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+    if (re.test(window) && !(mine && mine.test(window))) return CFG.roster[i].name;
+  }
+  return null;
+}
 var recentAlertKeys = {};      // key -> t, so one utterance cannot fire ten times
 
 function scanFragment(text, t) {
@@ -1978,9 +2024,18 @@ function scanFragment(text, t) {
     matchIdx = nameHit.index; matchStr = nameHit[0]; label = nameHit[0];
   } else {
     if (!CFG.qPatterns) return;
+
+    /* TARGETING. A question with somebody ELSE's name attached is not yours.
+       Without this, "Sarah, can you take that?" fired the same alarm as
+       "Luke, can you take that?" — and an alarm that cries wolf gets ignored,
+       which costs more than the miss. */
+    var other = otherPersonAddressed(text, qHit.m.index);
+    if (other) { lastOtherHitAt = t; return; }
+
     /* A question pattern within 12s of your name being said is almost certainly
-       still aimed at you, even though the name landed in an earlier fragment. */
-    var recentName = (t - lastNameHitAt) < 12000;
+       still aimed at you, even though the name landed in an earlier fragment.
+       But not if someone else was addressed more recently than you were. */
+    var recentName = (t - lastNameHitAt) < 12000 && lastNameHitAt >= lastOtherHitAt;
     kind = recentName ? 'direct_question' : 'open_question';
     severity = recentName ? 'hard' : 'soft';
     matchIdx = qHit.m.index; matchStr = qHit.m[0]; label = qHit.label;
@@ -2152,7 +2207,8 @@ function rosterAdd(name) {
   if (CFG.roster.length >= 12) { toast('Twelve people is the most the roster holds.', 'warn'); return null; }
   var exists = CFG.roster.filter(function (r) { return normKey(r.name) === normKey(name); })[0];
   if (exists) return exists;
-  var r = { id: 's' + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name, print: null, enrolled: false };
+  var r = { id: 's' + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name,
+            print: null, enrolled: false, samples: 0, createdAt: now(), lastSeen: 0 };
   CFG.roster.push(r); saveCfg(); renderRoster(); return r;
 }
 function rosterRemove(id) {
@@ -2422,12 +2478,18 @@ var VoiceID = (function () {
      runner-up. An ambiguous guess is worse than no guess. */
   function identify(vec) {
     var scored = CFG.roster.filter(function (r) { return r.enrolled && r.print; })
-      .map(function (r) { return { id: r.id, s: cos(vec, r.print) }; })
+      .map(function (r) { return { id: r.id, s: cos(vec, r.print), samples: r.samples || 1 }; })
       .sort(function (a, b) { return b.s - a.s; });
     if (!scored.length) return null;
     var top = scored[0], second = scored[1];
-    if (top.s < 0.86) return null;
+    /* A profile built from one sample has to clear a higher bar than one built
+       from several. A wrong attribution is worse than "Unknown Speaker", so the
+       margin over the runner-up matters as much as the absolute score. */
+    var need = top.samples >= 3 ? 0.84 : (top.samples === 2 ? 0.86 : 0.88);
+    if (top.s < need) return null;
     if (second && (top.s - second.s) < 0.035) return null;
+    var r = rosterGet(top.id);
+    if (r) { r.lastSeen = now(); }
     return top.id;
   }
 
@@ -2478,7 +2540,19 @@ var VoiceID = (function () {
       var r = rosterGet(enrolling.id);
       enrolling = null;
       if (!vec || !r || n < 20) return 0;
-      r.print = vec; r.enrolled = true; saveCfg();
+      /* Samples accumulate into a running mean rather than replacing the print,
+         so a second or third sample genuinely improves the profile instead of
+         throwing away what was already learned. */
+      var prior = r.samples || 0;
+      if (r.print && prior > 0 && r.print.length === vec.length) {
+        for (var i = 0; i < vec.length; i++) r.print[i] = (r.print[i] * prior + vec[i]) / (prior + 1);
+      } else {
+        r.print = vec;
+      }
+      r.samples = prior + 1;
+      r.enrolled = true;
+      r.createdAt = r.createdAt || now();
+      saveCfg();
       return n;
     },
     enrollFrames: function () { return enrolling ? enrolling.frames.length : 0; }
@@ -4193,6 +4267,30 @@ function renderPanels() {
       }).join('')
     : '<li class="none">None yet.</li>';
 
+  setCount('cQuestions', MEET.questionLog.length);
+  $('lQuestions').innerHTML = MEET.questionLog.length
+    ? MEET.questionLog.slice().reverse().slice(0, 12).map(function (q) {
+        var who = q.target === 'user' ? 'YOU' : (q.target === 'group' ? 'GROUP'
+                  : (q.askedBy ? esc(q.askedBy) : 'SOMEONE'));
+        return '<li class="qRow"><span class="qWho ' + (q.target === 'user' ? 'me' : '') + '">' +
+               hhmm(q.t) + ' \u00b7 ' + who + '</span>' + esc(q.text) + '</li>';
+      }).join('')
+    : '<li class="none">None yet.</li>';
+
+  setCount('cBookmarks', MEET.bookmarks.length);
+  $('lBookmarks').innerHTML = MEET.bookmarks.length
+    ? MEET.bookmarks.map(function (b, i) { return { b: b, i: i }; }).reverse().map(function (o) {
+        var b = o.b;
+        return '<div class="bmRow"><div class="bmHead">&#128278; ' + hhmm(b.t) +
+          (b.topic ? ' <span class="bmTopic">' + esc(b.topic) + '</span>' : '') +
+          (b.spk ? '<span class="who">' + esc(b.spk) + '</span>' : '') +
+          '<button class="rmBtn" data-bm="' + o.i + '" title="Remove">&times;</button></div>' +
+          (b.context ? '<div class="bmCtx">' + esc(b.context) + '</div>' : '') +
+          '<input class="bmNote" data-note="' + o.i + '" placeholder="Add a note\u2026" value="' +
+          esc(b.note || '') + '"></div>';
+      }).join('')
+    : '<div class="none">Press <span class="kbd">B</span> to mark a moment.</div>';
+
   setCount('cTimeline', MEET.timeline.length);
   $('lTimeline').innerHTML = MEET.timeline.length
     ? MEET.timeline.slice().reverse().map(function (x) {
@@ -4324,6 +4422,28 @@ function importSettings(text) {
         ' ignored — sensitivity, backend, retention and spend cap can only be changed here.' : ''), 'ok', 9000);
 }
 
+/* ============================================================ 18b. bookmarks
+   One keystroke has to be enough — if marking a moment takes any thought, it
+   will not happen during the moment worth marking. The note comes afterwards. */
+function addBookmark() {
+  if (!MEET.frags.length) { toast('Nothing to bookmark yet.', 'warn'); return; }
+  var b = { t: now(), spk: currentSpeaker ? speakerName(currentSpeaker) : '',
+            topic: VIEW.topic || '', segment: CFG.segment || '',
+            context: recentSpeechDigest().slice(0, 400), note: '' };
+  MEET.bookmarks.push(b);
+  if (MEET.bookmarks.length > 100) MEET.bookmarks.shift();
+  saveMeeting();
+  var d = $('pBookmarks'); if (d) d.open = true;
+  renderSoon();
+  toast('Bookmarked ' + hhmm(b.t) + (b.topic ? ' — ' + b.topic : '') + '. Add a note in the panel.', 'ok', 5000);
+}
+function setBookmarkNote(i, text) {
+  if (MEET.bookmarks[i]) { MEET.bookmarks[i].note = String(text || '').slice(0, 300); saveMeeting(); }
+}
+function removeBookmark(i) {
+  if (MEET.bookmarks[i]) { MEET.bookmarks.splice(i, 1); saveMeeting(); renderSoon(); }
+}
+
 /* ===================================================================== 19. export */
 
 function exportMarkdown() {
@@ -4397,6 +4517,24 @@ function exportMarkdown() {
   /* MEET.alerts is deliberately NOT exported. It is a log of the moments one
      person's attention lapsed; in a document the team shares that is a
      surveillance artifact, not meeting notes. It stays on-screen only. */
+
+  if (MEET.bookmarks.length) {
+    L.push('## Bookmarked moments');
+    L.push(MEET.bookmarks.map(function (b) {
+      return '- **' + hhmm(b.t) + '**' + (b.topic ? ' \u2014 ' + b.topic : '') +
+             (b.spk ? ' _(' + b.spk + ')_' : '') +
+             (b.note ? '\n  - Note: ' + b.note : '') +
+             (b.context ? '\n  - Context: ' + b.context : '');
+    }).join('\n'));
+    L.push('');
+  }
+  if (MEET.questionLog.length) {
+    L.push('## Questions asked');
+    L.push(MEET.questionLog.map(function (q) {
+      return '- **' + hhmm(q.t) + '** (' + (q.target === 'user' ? 'to you' : q.target) + ') ' + q.text;
+    }).join('\n'));
+    L.push('');
+  }
 
   L.push('## Transcript');
   L.push('');
@@ -4690,6 +4828,7 @@ function bindUI() {
   $('btnSettings').addEventListener('click', function () {
     document.body.classList.toggle('settingsOpen'); syncSettingsInert();
   });
+  $('btnBookmark').addEventListener('click', addBookmark);
   $('btnExport').addEventListener('click', exportMarkdown);
   $('btnDiscreet').addEventListener('click', function () { setDiscreet(!CFG.discreet); });
   $('btnNew').addEventListener('click', function () {
@@ -4735,6 +4874,16 @@ function bindUI() {
     var b = e.target.closest ? e.target.closest('.rmBtn') : null;
     if (!b) return;
     removeItem(b.getAttribute('data-rm'), parseInt(b.getAttribute('data-i'), 10));
+  });
+  $('contextZone').addEventListener('click', function (e) {
+    var bm = e.target.closest ? e.target.closest('[data-bm]') : null;
+    if (bm) removeBookmark(parseInt(bm.getAttribute('data-bm'), 10));
+  });
+  $('contextZone').addEventListener('input', function (e) {
+    var n = e.target;
+    if (n && n.classList && n.classList.contains('bmNote')) {
+      setBookmarkNote(parseInt(n.getAttribute('data-note'), 10), n.value);
+    }
   });
   $('contextZone').addEventListener('change', function (e) {
     var c = e.target;
@@ -4828,6 +4977,7 @@ function bindUI() {
       case 'l': e.preventDefault(); listening ? stopListening() : startListening(); break;
       case 's': e.preventDefault(); document.body.classList.toggle('settingsOpen'); syncSettingsInert(); break;
       case 'd': e.preventDefault(); dismissAlert(); break;
+      case 'b': e.preventDefault(); addBookmark(); break;
       case 'e': e.preventDefault(); exportMarkdown(); break;
       case 'v': e.preventDefault(); setDiscreet(!CFG.discreet); break;
     }
