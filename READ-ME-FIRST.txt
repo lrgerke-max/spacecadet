@@ -122,12 +122,13 @@ WHAT AN API KEY WOULD COST
   You do not need one. The default mode uses your own claude.ai subscription
   and this page never calls an API.
 
-  If you do add a key, at the default 90-second interval it runs about 43
-  cents per hour of meeting on Sonnet - roughly $220 a year at ten hours a
-  week. Haiku is about a third of that, Opus about $370. Those are upper
-  bounds: nothing is sent when nobody is talking, and doubling the interval
-  halves the bill. Settings shows the live number for your own settings, and
-  there is a per-meeting spend cap that stops it dead.
+  If you do add a key, at the default 90-second interval it runs 40 to 52
+  cents per hour of meeting on Sonnet - roughly $210 to $270 a year at ten
+  hours a week. Haiku is about a third of that, Opus roughly $350 to $450.
+  It costs more per call the longer a meeting runs, because what has already
+  been captured is re-sent each time. Nothing is sent when nobody is talking,
+  and doubling the interval cuts it roughly in half. Settings shows the live
+  number for your own settings, and a per-meeting spend cap stops it dead.
 
 REQUIREMENTS
   Chrome or Edge. Built and tuned for Windows.

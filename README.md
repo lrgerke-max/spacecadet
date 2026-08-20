@@ -61,12 +61,15 @@ rendering code — the UI cannot tell which one produced what it is showing.
 | `api` | metered | Adds the ambient auto-summary and reference resolution via the Anthropic API with your own key. The only thing gated behind a key. |
 | `local` | free | Nothing leaves the machine. The outbound choke point is hard-disabled and blocked attempts are logged. |
 
-At the default 90-second interval, `api` mode costs roughly **$0.43 per hour of meeting** on
-Sonnet 5 — about **$220 a year at ten hours a week**. Haiku 4.5 is about a third of that
-(~$74/yr), Opus 5 about $370. Those are upper bounds: a call is skipped whenever fewer than
-~15 new words arrived, so silence is free, and doubling the interval halves the bill. Settings
-shows the live figure for your own model and interval, and a per-meeting spend cap stops it
-dead at a number you set.
+At the default 90-second interval, `api` mode runs **$0.40–0.52 per hour of meeting** on
+Sonnet 5 — call it **$210–270 a year at ten hours a week**. Haiku 4.5 is about a third of that
+(~$70–90/yr), Opus 5 roughly $350–450. The spread is real rather than hedging: the previous
+state — decisions, issues, to-dos, glossary — is re-sent on every call, so a meeting costs more
+per call the longer it runs and the more it captures. Working against that, a call is skipped
+whenever fewer than ~15 new words arrived, so silence is free, and doubling the interval cuts
+it roughly in proportion. Settings computes the live figure from your own model, interval,
+pre-meeting context and what the current meeting has accumulated, and a per-meeting spend cap
+stops it dead at a number you set — including the catch-me-up call, not just the ambient loop.
 
 Every outbound request goes through a single function, so the network boundary is auditable
 at a glance — and visible in the app's own Network log panel. A Content-Security-Policy
