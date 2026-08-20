@@ -59,6 +59,7 @@ rendering code — the UI cannot tell which one produced what it is showing.
 |---|---|---|
 | **`handoff`** (default) | free | Catch-me-up builds a prompt, copies it, and opens claude.ai. Your Pro subscription pays. This page makes no API call. |
 | `api` | metered | Adds the ambient auto-summary and reference resolution via the Anthropic API with your own key. The only thing gated behind a key. |
+| `local` | free | Nothing leaves the machine. The outbound choke point is hard-disabled and blocked attempts are logged. |
 
 At the default 90-second interval, `api` mode costs roughly **$0.43 per hour of meeting** on
 Sonnet 5 — about **$220 a year at ten hours a week**. Haiku 4.5 is about a third of that
@@ -66,7 +67,6 @@ Sonnet 5 — about **$220 a year at ten hours a week**. Haiku 4.5 is about a thi
 ~15 new words arrived, so silence is free, and doubling the interval halves the bill. Settings
 shows the live figure for your own model and interval, and a per-meeting spend cap stops it
 dead at a number you set.
-| `local` | free | Nothing leaves the machine. The outbound choke point is hard-disabled and blocked attempts are logged. |
 
 Every outbound request goes through a single function, so the network boundary is auditable
 at a glance — and visible in the app's own Network log panel. A Content-Security-Policy

@@ -1260,7 +1260,11 @@
       </div>
       <div class="row">
         <label>Alert auto-clears after — <b id="setAlertTtlVal">30</b>s</label>
-        <input type="range" id="setAlertTtl" min="30" max="300" step="15">
+        <!-- Narrower than SETTING_RANGE allows on purpose: the retune declared a
+             two-minute-old alert a lie, so the slider stops offering longer ones.
+             Anyone who already dragged it past 180 keeps that value — the clamp
+             still accepts it and the label reads it back honestly. -->
+        <input type="range" id="setAlertTtl" min="15" max="180" step="15">
       </div>
     </div>
 
@@ -1971,6 +1975,11 @@ function resetMeeting() {
   MEET.convo = { happened: '', happenedAt: 0, issueKind: 'none', issueText: '',
                  question: null, confidence: '', at: 0 };
   MEET.questionLog = []; MEET.bookmarks = [];
+  /* The segment is the one piece of meeting state kept in CFG, so it survived
+     every reset above: last week's L10 ended on Conclude, and this week's
+     check-in items were all stamped Conclude — in the one feature whose whole
+     job is saying which part of the agenda something came from. */
+  clearSegment();
   reindexItems();
   meetingCounts = { uni: Object.create(null), total: 0 };
   if (carried.length || openIssues.length) {
@@ -4777,13 +4786,32 @@ function showConsent() {
 function eosOn() { return CFG.meetingType === 'leadership'; }
 function syncEosUI() { document.body.classList.toggle('eos', eosOn()); }
 
-/* Level 10 agenda segment. */
-function setSegment(name) {
-  CFG.segment = (CFG.segment === name) ? '' : name;
-  saveCfg();
+/* Level 10 agenda segment. The stamp lives in CFG because it outlives a
+   render, which means it also outlives things it must not: a new meeting, and
+   switching away from the Level 10 type. Both go through here. */
+/* Paint the bar from CFG. Everything that changes the segment routes through
+   here, INCLUDING init: the pills used to be lit only by the click that set
+   them, so a refresh mid-meeting — the recovery this app promises is safe —
+   restored the meeting and the stamp but not the highlight. The bar then said
+   "no segment" while every issue captured was still being filed under IDS, and
+   clicking IDS to correct it hit the toggle and silently un-stamped it. */
+function syncSegmentUI() {
   Array.prototype.forEach.call(document.querySelectorAll('#segbar .segp'), function (b) {
     b.classList.toggle('on', b.getAttribute('data-seg') === CFG.segment);
   });
+}
+
+function clearSegment() {
+  if (!CFG.segment) return;
+  CFG.segment = '';
+  saveCfg();
+  syncSegmentUI();
+}
+
+function setSegment(name) {
+  CFG.segment = (CFG.segment === name) ? '' : name;
+  saveCfg();
+  syncSegmentUI();
   if (CFG.segment) pushTimeline(CFG.segment, 'segment', now());
   renderSoon();
 }
@@ -4799,7 +4827,7 @@ function exportSettings() {
     url = URL.createObjectURL(blob);
   } catch (e) { toast('This browser blocked the download.', 'err'); return; }
   var a = document.createElement('a');
-  a.href = url; a.download = 'recap-settings.json';
+  a.href = url; a.download = 'spacecadet-settings.json';
   document.body.appendChild(a); a.click();
   setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1200);
   toast('Settings exported. The API key was deliberately excluded.', 'ok');
@@ -5502,12 +5530,7 @@ function applyMeetingType() {
   /* Leaving the Level 10 type must not strand a segment stamp on everything
      captured afterwards, so the current segment goes with it. */
   syncEosUI();
-  if (!eosOn() && CFG.segment) {
-    CFG.segment = '';
-    Array.prototype.forEach.call(document.querySelectorAll('#segbar .segp'), function (b) {
-      b.classList.remove('on');
-    });
-  }
+  if (!eosOn()) clearSegment();
 
   if (LOCKED_TYPES[t]) {
     if (!CFG.sensitive) {
@@ -5786,6 +5809,7 @@ function tick() {
 
 function init() {
   syncEosUI();
+  syncSegmentUI();          // a refresh must restore the lit pill, not just the stamp
   syncSettingsUI();
   bindSettings();
   bindUI();
