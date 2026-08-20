@@ -3085,6 +3085,11 @@ function WebSpeechEngine() {
 function WhisperEngine() {
   var ctx = null, srcNode = null, proc = null, sink = null;
   var chunks = [], samples = 0, running = false;
+  /* `running` gates CAPTURE. `live` gates the status chip, which doubles as the
+     recording indicator: a transcription still in flight when Stop is pressed
+     must still deliver its text — that speech really was said — but must not
+     flip the chip from "stopped" back to "whisper · 1.2s" behind the user. */
+  var live = false;
   var pipe = null, busy = false, pending = null, backend = '';
   var onFrag = null;
 
@@ -3124,20 +3129,27 @@ function WhisperEngine() {
        then fetches model weights from huggingface using its own fetch, which
        never passes through outbound(). Log every host it will touch rather than
        showing one reassuring row. */
-    outboundNote('transformers.js module', TRANSFORMERS_CDN, 'engine-download');
-    outboundNote('whisper model weights', 'https://huggingface.co', 'engine-download');
-    outboundNote('whisper model weights (lfs)', 'https://cdn-lfs.huggingface.co', 'engine-download');
+    var noteMod = outboundNote('transformers.js module', TRANSFORMERS_CDN, 'engine-download');
+    var noteHf  = outboundNote('whisper model weights', 'https://huggingface.co', 'engine-download');
+    var noteLfs = outboundNote('whisper model weights (lfs)', 'https://cdn-lfs.huggingface.co', 'engine-download');
+    /* These rows used to be written once and never touched again, so the network
+       panel — the thing someone opens to check the on-device promise — showed
+       "sent" forever whether the download succeeded, failed, or never happened. */
+    var settle = function (row, state) { if (row && row.state === 'sent') row.state = state; };
 
     sttStatus('loading engine…', 'warn');
     var mod;
     try {
-      mod = await import(/* one-off engine download */ TRANSFORMERS_CDN);
+      mod = await withTimeout(import(/* one-off engine download */ TRANSFORMERS_CDN),
+                              45000, 'the transformers.js CDN');
     } catch (e) {
+      settle(noteMod, 'failed'); settle(noteHf, 'not reached'); settle(noteLfs, 'not reached');
       throw captureError('Could not load the Whisper engine from the CDN.',
         'A corporate proxy is the usual cause. Switch the STT engine back to Web Speech in Settings — ' +
         'it needs no download. (' + (e && e.message ? e.message : e) + ')');
     }
 
+    settle(noteMod, 'ok');
     var pipeline = mod.pipeline, env = mod.env;
     /* From a file:// page there is no server to serve ./models from, so never look. */
     env.allowLocalModels = false;
@@ -3168,25 +3180,28 @@ function WhisperEngine() {
          WebGPU; a full-fp16 whisper encoder is known to lose precision. */
       if (navigator.gpu) {
         try {
-          pipe = await pipeline('automatic-speech-recognition', model, {
+          pipe = await withTimeout(pipeline('automatic-speech-recognition', model, {
             device: 'webgpu',
             dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
             progress_callback: progress
-          });
+          }), 300000, 'the model download');
           backend = 'webgpu';
+          settle(noteHf, 'ok'); settle(noteLfs, 'ok');
           sttStatus('whisper ready (webgpu)', 'ok');
           return pipe;
         } catch (e) { lastErr = e; }
       }
       try {
-        pipe = await pipeline('automatic-speech-recognition', model, {
+        pipe = await withTimeout(pipeline('automatic-speech-recognition', model, {
           device: 'wasm', dtype: 'q8', progress_callback: progress
-        });
+        }), 300000, 'the model download');
         backend = 'wasm';
+        settle(noteHf, 'ok'); settle(noteLfs, 'ok');
         sttStatus('whisper ready (wasm)', 'ok');
         return pipe;
       } catch (e2) { lastErr = e2; }
     }
+    settle(noteHf, 'failed'); settle(noteLfs, 'failed');
     throw captureError('Whisper failed to initialise.',
       (lastErr && lastErr.message) ? lastErr.message : 'Unknown model load failure.');
   }
@@ -3208,15 +3223,18 @@ function WhisperEngine() {
       text = String(text).trim();
       if (text && !WHISPER_JUNK.test(text.trim())) {
         onFrag({ text: text, isFinal: true, t: tEnd });
-        sttStatus('whisper ' + backend + ' · ' + Math.round((now() - t0) / 100) / 10 + 's', 'ok');
-      } else {
+        if (live) sttStatus('whisper ' + backend + ' · ' + Math.round((now() - t0) / 100) / 10 + 's', 'ok');
+      } else if (live) {
         sttStatus('whisper ' + backend + ' · silence', 'ok');
       }
     } catch (e) {
-      sttStatus('transcribe failed: ' + (e && e.message ? e.message : e), 'err');
+      if (live) sttStatus('transcribe failed: ' + (e && e.message ? e.message : e), 'err');
     } finally {
       busy = false;
-      if (pending && running) {
+      /* Drain the queue even after a stop: the tail flush below lands here when
+         an earlier chunk was still inferring, and dropping it loses the last
+         thing anyone said. */
+      if (pending) {
         var p = pending; pending = null;
         transcribe(p.a, p.r, p.t);
       }
@@ -3224,9 +3242,9 @@ function WhisperEngine() {
   }
 
   function flush(force) {
+    if (!ctx || !samples) return;                 // nothing buffered, or already torn down
     var need = clamp(CFG.chunkSec, 10, 30) * ctx.sampleRate;
     if (!force && samples < need) return;
-    if (!samples) return;
 
     var joined = new Float32Array(samples);
     var off = 0;
@@ -3235,7 +3253,7 @@ function WhisperEngine() {
 
     /* Silence gate. Whisper hallucinates confidently on silence, and running the
        model over nothing wastes seconds of CPU we need for real speech. */
-    if (rms(joined) < 0.004) { sttStatus('silence', 'warn'); return; }
+    if (rms(joined) < 0.004) { if (live) sttStatus('silence', 'warn'); return; }
     transcribe(joined, ctx.sampleRate, now());
   }
 
@@ -3270,12 +3288,19 @@ function WhisperEngine() {
       sink.gain.value = 0;
       srcNode.connect(proc); proc.connect(sink); sink.connect(ctx.destination);
 
-      running = true;
+      running = true; live = true;
       sttStatus('whisper listening (' + backend + ')', 'ok');
     },
     stop: function () {
+      /* Transcribe the tail BEFORE tearing the graph down. Whatever is buffered
+         is real speech from the last few seconds — people talk right up until
+         they press Stop — and this used to be discarded silently, so the last
+         sentence of every meeting never reached the transcript. Must run while
+         ctx still exists; the resampler uses its own OfflineAudioContext, so the
+         inference itself is happy to finish long after ctx is closed. */
+      try { flush(true); } catch (e) {}
       running = false;
-      pending = null;
+      live = false;
       try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
       try { if (srcNode) srcNode.disconnect(); } catch (e) {}
       try { if (sink) sink.disconnect(); } catch (e) {}
@@ -3402,7 +3427,7 @@ async function startListening() {
        recogniser because a CDN was blocked would break that promise without the
        word "Google" ever appearing. Stop, and make the user choose again. */
     if (CFG.engine === 'whisper') {
-      abandonStart(captureStream, null);
+      abandonStart(captureStream, engine);
       captureStream = null; engine = null; starting = false;
       VIEW.capture = 'idle'; VIEW.captureMsg = '';
       CFG.firstRunDone = false; saveCfg();
@@ -3483,6 +3508,27 @@ function onFragment(f) {
    EVERY outbound request this page can make goes through outbound(). There is no
    other fetch() in the file. That makes the network boundary auditable at a glance,
    and makes `local` mode enforceable rather than aspirational. */
+
+/* A proxy that black-holes a connection leaves a promise pending forever. The
+   API path already guards against that with an AbortController; the engine
+   download had nothing, so a blocked huggingface left "starting…" on screen
+   permanently with L doing nothing — the app looked hung rather than blocked.
+   import() and the library's internal fetch cannot be aborted, so this bounds
+   the wait and reports it; the orphaned request is left to die on its own. */
+function withTimeout(promise, ms, what) {
+  var timer;
+  return Promise.race([
+    promise,
+    new Promise(function (_, reject) {
+      timer = setTimeout(function () {
+        reject(captureError('Timed out waiting for ' + what + '.',
+          'A corporate proxy usually causes this. Switch the transcription engine to Web Speech in ' +
+          'Settings — it needs no download.'));
+      }, ms);
+    })
+  ]).then(function (v) { clearTimeout(timer); return v; },
+          function (e) { clearTimeout(timer); throw e; });
+}
 
 function outboundNote(purpose, url, kind) {
   var host = '';
@@ -3660,6 +3706,16 @@ function applyLLMState(obj, src) {
    gated behind a key. Incremental: previous state + only what is new. */
 
 var apiInFlight = false;
+var catchUpInFlight = false;
+
+/* The spend cap is described in Settings as a hard ceiling, so it has to be
+   checked by everything that can spend — not just the ambient loop. Catch-me-up
+   is a bigger call than an ambient tick and sits on a button and a hotkey, so
+   leaving it uncapped meant the ceiling could be walked straight past by
+   pressing C. */
+function spendCapReached() {
+  return CFG.spendCapUsd > 0 && MEET.cost.usd >= CFG.spendCapUsd;
+}
 var apiFails = 0;
 var lastApiAt = 0;
 
@@ -3674,6 +3730,27 @@ function apiHeaders() {
 }
 
 function priceOf(model) { return PRICES[model] || PRICES['claude-sonnet-5']; }
+
+/* Per-model request shape. These three models do NOT take the same parameters,
+   and sending the wrong one is a 400, not a warning:
+
+   - `output_config.effort` is a Claude 5 / 4.6+ parameter. Haiku 4.5 predates it
+     and REJECTS it — so the cheapest model in the dropdown, the one someone
+     cost-conscious picks first, failed every single call.
+   - Sonnet 5 and Opus 5 run adaptive thinking when `thinking` is omitted, and
+     thinking shares the `max_tokens` ceiling with the answer. A tight ceiling
+     therefore buys thinking and then truncates the reply — billed in full,
+     unusable, and for the ambient call unparseable as JSON.
+   - Ambient summarising is mechanical extraction on a 90-second loop, so Sonnet
+     gets thinking switched off outright for latency. Opus is left adaptive on
+     purpose: with thinking disabled it can write a tool call into visible text
+     and leak reasoning tags, so low effort is the documented lever there. */
+var MODEL_CAPS = {
+  'claude-sonnet-5':  { effort: true,  thinks: true,  canDisableThinking: true  },
+  'claude-opus-5':    { effort: true,  thinks: true,  canDisableThinking: false },
+  'claude-haiku-4-5': { effort: false, thinks: false, canDisableThinking: false }
+};
+function modelCaps(m) { return MODEL_CAPS[m] || MODEL_CAPS['claude-sonnet-5']; }
 
 function noteUsage(usage) {
   if (!usage) return;
@@ -3707,17 +3784,32 @@ function transcriptBlock(list, withTimes) {
 
 async function callAnthropic(system, userContent, opts) {
   opts = opts || {};
+  var caps = modelCaps(CFG.model);
+
+  /* low effort keeps latency down — this is a live loop, not a research task */
+  var oc = opts.outputConfig || { effort: 'low', format: { type: 'json_schema', schema: RESPONSE_SCHEMA } };
+  oc = Object.keys(oc).reduce(function (o, k) {
+    if (k !== 'effort' || caps.effort) o[k] = oc[k];      // Haiku 4.5 rejects effort outright
+    return o;
+  }, {});
+
+  var noThink = caps.canDisableThinking && opts.noThinking;
+
+  /* Room for thinking to happen AND the answer to finish, but only where
+     thinking will actually run: it shares the ceiling with the reply, so a
+     thinking model on a tight budget reasons its way to a truncated answer.
+     Where thinking is off the original ceiling is already right. */
+  var maxTok = opts.maxTokens || 2000;
+  if (caps.thinks && !noThink) maxTok = Math.max(maxTok, 4000);
+
   var body = {
     model: CFG.model,
-    max_tokens: opts.maxTokens || 2000,
+    max_tokens: maxTok,
     system: system,
-    output_config: opts.outputConfig || {
-      /* low effort keeps latency down — this is a live loop, not a research task */
-      effort: 'low',
-      format: { type: 'json_schema', schema: RESPONSE_SCHEMA }
-    },
     messages: [{ role: 'user', content: userContent }]
   };
+  if (Object.keys(oc).length) body.output_config = oc;
+  if (noThink) body.thinking = { type: 'disabled' };
 
   var t0 = now();
   var res = await outbound(ANTHROPIC_URL, {
@@ -3738,10 +3830,23 @@ async function callAnthropic(system, userContent, opts) {
   }
 
   var data = await res.json();
+
+  /* Truncation is silent otherwise: the ambient call fails JSON.parse and looks
+     like a bad response, and catch-me-up renders a sentence that stops mid-word
+     in front of whoever is reading over your shoulder. */
+  if (data && data.stop_reason === 'max_tokens') {
+    var te = new Error('the reply hit the length limit before it finished');
+    te.status = 0; te.truncated = true;
+    noteUsage(data.usage);                                  // it was still billed
+    throw te;
+  }
+
   /* The request was already on the wire, but nothing from it should be stored
-     once the meeting has been marked sensitive mid-flight. */
-  if (CFG.sensitive) throw new Error('sensitive meeting: response discarded');
+     once the meeting has been marked sensitive mid-flight. The charge is metered
+     first regardless: Anthropic bills for a call whose answer we throw away, and
+     a cost readout that quietly omits it is a cost readout that lies. */
   noteUsage(data.usage);
+  if (CFG.sensitive) throw new Error('sensitive meeting: response discarded');
   VIEW.api.latency = latency;
 
   var text = '';
@@ -3765,7 +3870,18 @@ async function callAnthropic(system, userContent, opts) {
    This is an UPPER BOUND. ambientTick() skips a call entirely when fewer than
    15 new words arrived, so a meeting with any silence in it costs less. */
 var TOK_PER_CHAR = 1 / 3.7;
-var EST_PRIOR_STATE_TOK = 250;    // the previous state object, sent back as context
+var EST_PRIOR_STATE_TOK = 250;    // fallback only — priorStateTok() measures the real thing
+
+/* The prior-state object is re-sent on every call and GROWS all meeting: fifteen
+   decisions, fifteen issues, fifteen to-dos and twenty-five glossary terms, each
+   of whatever length someone said it at. A flat 250 was fine for the first call
+   and increasingly wrong after that, which made a figure labelled "upper bound"
+   quietly understate a long leadership meeting — the exact case this is built
+   for. Measure it instead, the same way the system prompt already is. */
+function priorStateTok() {
+  try { return JSON.stringify(previousStateBlock()).length * TOK_PER_CHAR; }
+  catch (e) { return EST_PRIOR_STATE_TOK; }
+}
 var EST_OUTPUT_TOK = 350;         // the structured state object that comes back
 var EST_WORDS_PER_MIN = 150;      // conversational speech
 var EST_TOK_PER_WORD = 1.35;
@@ -3775,7 +3891,7 @@ function costEstimate(model, intervalSec, hoursPerWeek) {
   var iv = intervalSec || CFG.intervalSec;
   var sysTok = buildSystemPrompt(CFG.profile, CFG.context).length * TOK_PER_CHAR;
   var windowTok = (iv / 60) * EST_WORDS_PER_MIN * EST_TOK_PER_WORD;
-  var inTok = sysTok + windowTok + EST_PRIOR_STATE_TOK;
+  var inTok = sysTok + windowTok + priorStateTok();
   var perCall = (inTok / 1e6) * pr.in + (EST_OUTPUT_TOK / 1e6) * pr.out;
   var perHour = perCall * (3600 / iv);
   return { perCall: perCall, perHour: perHour,
@@ -3789,7 +3905,7 @@ async function ambientTick() {
   if (apiInFlight) return;
   /* Hard dollar ceiling. Without one, a 30-second interval left running all day
      is an unbounded charge on somebody's card. */
-  if (CFG.spendCapUsd > 0 && MEET.cost.usd >= CFG.spendCapUsd) {
+  if (spendCapReached()) {
     if (VIEW.api.state !== 'capped') {
       VIEW.api.state = 'capped'; VIEW.api.msg = 'spend cap reached';
       toast('Spend cap of $' + Number(CFG.spendCapUsd).toFixed(2) + ' reached — automatic summaries stopped. ' +
@@ -3798,6 +3914,7 @@ async function ambientTick() {
     }
     return;
   }
+  if (VIEW.api.state === 'fatal') return;      // will not fix itself; do not spend on it again
   if (now() < VIEW.api.nextRetryAt) return;
   if (now() - lastApiAt < CFG.intervalSec * 1000) return;
 
@@ -3821,7 +3938,8 @@ async function ambientTick() {
 
   try {
     var out = await callAnthropic(buildSystemPrompt(CFG.profile, CFG.context), userContent, {
-      purpose: 'ambient summary'
+      purpose: 'ambient summary',
+      noThinking: true     // mechanical extraction on a 90s loop; latency beats deliberation
     });
 
     var parsed = null;
@@ -3848,15 +3966,36 @@ async function ambientTick() {
     }
   } catch (e) {
     apiFails++;
-    VIEW.api.state = 'error';
+    /* A 4xx is the API saying "this request will never work" — a bad key, a bad
+       model. Backing off and re-sending the identical request every 60s just
+       prints a countdown beside a permanent failure and never explains it. Only
+       genuinely transient failures (429, 5xx, network, timeout) are retried. */
+    var st = e && e.status;
+    var permanent = st === 400 || st === 401 || st === 403 || st === 404;
+    VIEW.api.state = permanent ? 'fatal' : 'error';
     VIEW.api.msg = (e && e.message ? e.message : 'request failed').slice(0, 90);
-    scheduleApiRetry();
+    if (permanent) {
+      toast(st === 401 || st === 403
+        ? 'Anthropic rejected the API key, so automatic summaries stopped. Check it in Settings — capture and everything local keep working.'
+        : 'Anthropic rejected the request, so automatic summaries stopped. Check the model in Settings — capture and everything local keep working.',
+        'err', 12000);
+    } else {
+      scheduleApiRetry();
+    }
     /* Deliberately a status-bar state, not an alert() — an alert box in the middle
        of a meeting is worse than the failure it reports. */
   } finally {
     apiInFlight = false;
     renderSoon();
   }
+}
+
+/* Editing the key or the model is the user saying "I fixed it" — the only way
+   back out of a permanent failure, since nothing else will retry on its own. */
+function clearApiFatal() {
+  if (VIEW.api.state !== 'fatal') return;
+  VIEW.api.state = 'idle'; VIEW.api.msg = ''; apiFails = 0; VIEW.api.nextRetryAt = 0;
+  renderSoon();
 }
 
 function scheduleApiRetry() {
@@ -4063,6 +4202,22 @@ async function catchMeUp() {
   /* api: one richer call over the ENTIRE buffer rather than the incremental delta. */
   if (!CFG.apiKey) { toast('No API key set. Switch to the handoff backend, or add a key in Settings.', 'err'); openSettings(); return; }
 
+  /* Past the ceiling, answer from the local layer instead of refusing: someone
+     who just lost the thread needs an answer, and the free one is already built. */
+  if (spendCapReached()) {
+    show('catchupScrim');
+    $('catchupBody').innerHTML = localCatchupHtml();
+    $('catchupMeta').textContent = 'spend cap of $' + Number(CFG.spendCapUsd).toFixed(2) +
+                                   ' reached · built locally · no charge';
+    toast('Spend cap reached, so this was answered on-device. Raise the cap in Settings to use Claude again.',
+          'warn', 9000);
+    return;
+  }
+
+  /* Pressing C twice, or once while an ambient tick is mid-flight, used to fire
+     two full-transcript calls at once and bill for both. */
+  if (catchUpInFlight) { show('catchupScrim'); return; }
+
   show('catchupScrim');
   $('catchupBody').innerHTML = '<p style="color:var(--dim)">Asking Claude over the whole meeting…</p>';
   $('catchupMeta').textContent = CFG.model;
@@ -4075,6 +4230,7 @@ async function catchMeUp() {
     (t.truncated ? '(transcript truncated to the most recent portion)\n' : '') +
     'TRANSCRIPT:\n' + t.text;
 
+  catchUpInFlight = true;
   try {
     var out = await callAnthropic(buildSystemPrompt(CFG.profile, CFG.context), user, {
       maxTokens: 1600,
@@ -4090,6 +4246,8 @@ async function catchMeUp() {
       esc(e && e.message ? e.message : 'unknown error') + '</p>' +
       '<p style="color:var(--dim);margin-top:10px">Capture is unaffected and still running. ' +
       'The handoff backend needs no key if you want an answer right now.</p>';
+  } finally {
+    catchUpInFlight = false;
   }
 }
 
@@ -4248,6 +4406,7 @@ function renderStatusBar() {
     if (s === 'nokey') txt = 'no key';
     else if (s === 'calling') txt = 'calling…';
     else if (s === 'error') txt = 'retry in ' + Math.max(0, Math.round((VIEW.api.nextRetryAt - now()) / 1000)) + 's — ' + VIEW.api.msg;
+    else if (s === 'fatal') txt = 'stopped — ' + VIEW.api.msg;
     else if (s === 'badjson') txt = 'bad response — retrying';
     else if (VIEW.api.latency) txt = VIEW.api.latency + 'ms · ' + MEET.cost.calls + ' calls';
     else txt = 'idle';
@@ -5388,8 +5547,10 @@ function syncSettingsUI() {
   $('priceHint').innerHTML = p.label + ' — $' + p.in.toFixed(2) + ' per 1M input tokens, $' +
     p.out.toFixed(2) + ' per 1M output.<br><b>About $' + est.perHour.toFixed(2) +
     ' per hour of meeting</b>, so roughly <b>$' + Math.round(est.perYear) +
-    ' a year</b> at ten hours a week. Upper bound: a call is skipped whenever fewer ' +
-    'than ~15 new words arrived, so real usage runs below this. Doubling the interval halves it.';
+    ' a year</b> at ten hours a week, for this model, interval and pre-meeting context. ' +
+    'A call is skipped whenever fewer than ~15 new words arrived, so silence is free and a real ' +
+    'meeting runs under this. It creeps up as a meeting accumulates to-dos and decisions, since ' +
+    'those are re-sent each time. A longer interval cuts it roughly in proportion.';
 
   $('backendHint').innerHTML = {
     handoff: 'Free. “Catch me up” copies a prompt and opens claude.ai — <b>your Pro subscription pays</b>. ' +
@@ -5441,8 +5602,8 @@ function bindSettings() {
   function on(id, ev, fn) { $(id).addEventListener(ev, fn); }
 
   on('setBackend', 'change', function () { setBackend(this.value); });
-  on('setKey', 'input', function () { CFG.apiKey = this.value.trim(); saveCfg(); renderSoon(); });
-  on('setModel', 'change', function () { CFG.model = this.value; saveCfg(); syncSettingsUI(); });
+  on('setKey', 'input', function () { CFG.apiKey = this.value.trim(); saveCfg(); clearApiFatal(); renderSoon(); });
+  on('setModel', 'change', function () { CFG.model = this.value; saveCfg(); clearApiFatal(); syncSettingsUI(); });
   on('setInterval', 'input', function () {
     CFG.intervalSec = +this.value; $('setIntervalVal').textContent = CFG.intervalSec; saveCfg(); });
   on('setSource', 'change', function () {
