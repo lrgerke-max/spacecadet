@@ -1980,6 +1980,13 @@ function resetMeeting() {
      check-in items were all stamped Conclude — in the one feature whose whole
      job is saying which part of the agenda something came from. */
   clearSegment();
+  /* Who is speaking is per-meeting too, and it lives outside MEET so it
+     survived everything above. Next week's opening words were filed under
+     whoever happened to be talking when last week's meeting ended — and that
+     name is what ends up owning a to-do in the export. An unattributed line is
+     honest; a confidently wrong one is not. */
+  currentSpeaker = ''; fragGuess = false;
+  renderRoster();
   reindexItems();
   meetingCounts = { uni: Object.create(null), total: 0 };
   if (carried.length || openIssues.length) {
@@ -2223,6 +2230,23 @@ function localTopicLabel() {
    on a backend, works with no API key. This is the most time-critical path. ---- */
 
 var nameRe = null, nameReSrc = '';
+/* One escaped, boundary-correct alternative for a spoken name.
+
+   \b only asserts a boundary next to a WORD character. Pinning one against
+   punctuation inverts it: "J.R." escaped to J\.R\. and wrapped in \b(...)\b
+   asks for a word character immediately after the final dot, so it matched
+   "J.R.Smith" and nothing else — never "J.R., can you take that". Anyone
+   whose name ends in a period typed it into the first setup screen and the
+   name alert then silently never fired, which is the whole product.
+
+   So each alternative carries only the boundaries that mean something for it,
+   and the group is assembled without an outer pair. "Alex" still gets both and
+   still refuses to match "alexandra". */
+function nameAlternative(s) {
+  var esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (/^\w/.test(s) ? '\\b' : '') + esc + (/\w$/.test(s) ? '\\b' : '');
+}
+
 function buildNameRegex() {
   var src = String(CFG.names || '').slice(0, 500);       // beyond this the regex will not compile
   if (src === nameReSrc) return nameRe;
@@ -2230,11 +2254,11 @@ function buildNameRegex() {
   var parts = src.split(',').map(function (s) { return s.trim().slice(0, 40); })
                  .filter(function (s) { return s.length >= 2; })
                  .slice(0, 50)
-                 .map(function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+                 .map(nameAlternative);
   /* V8 compiles lazily, so an oversized pattern throws later inside exec() —
      which lands in render() and freezes the app. Compile-test it here. */
   try {
-    nameRe = parts.length ? new RegExp('\\b(' + parts.join('|') + ')\\b', 'i') : null;
+    nameRe = parts.length ? new RegExp('(' + parts.join('|') + ')', 'i') : null;
     if (nameRe) nameRe.test('probe');
   } catch (e) {
     nameRe = null;
@@ -2257,7 +2281,7 @@ function otherPersonAddressed(text, qIdx) {
     var nm = String(CFG.roster[i].name || '').trim();
     if (nm.length < 2) continue;
     if (mine && mine.test(nm)) continue;                 // that roster entry IS the user
-    var re = new RegExp('\\b' + nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+    var re = new RegExp(nameAlternative(nm), 'i');       // same boundary rule as the user's own name
     if (re.test(window) && !(mine && mine.test(window))) return CFG.roster[i].name;
   }
   return null;
@@ -4595,7 +4619,11 @@ function renderRoster() {
     var b = document.createElement('button');
     b.className = 'spk' + (r.id === currentSpeaker ? ' on' : '') + (r.enrolled ? ' hasVoice' : '');
     if (r.id === currentSpeaker) { b.style.background = speakerColor(r.id); b.style.borderColor = speakerColor(r.id); }
-    b.title = r.enrolled ? 'Voice learned — press ' + (i + 1) : 'Press ' + (i + 1) + ' while they speak';
+    /* Only nine number keys exist, but the roster holds twelve. Entries past
+       the ninth are click-only, so do not tell someone to "press 10". */
+    var key = i < 9 ? String(i + 1) : '';
+    b.title = (r.enrolled ? 'Voice learned. ' : '') +
+      (key ? 'Press ' + key + ' while they speak' : 'Click while they speak (no number key past the ninth)');
     b.innerHTML = '<span class="vdot"></span>' + esc(r.name) +
                   (i < 9 ? '<span class="num">' + (i + 1) + '</span>' : '');
     b.addEventListener('click', function () { setSpeaker(r.id); });
