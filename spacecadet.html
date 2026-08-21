@@ -2359,17 +2359,32 @@ function otherPersonAddressed(text, qIdx, qLen) {
    using the number keys. */
 function userIsSpeaking() {
   if (!currentSpeaker) return false;
-  var mine = buildNameRegex();
-  if (!mine) return false;
-  var nm = speakerName(currentSpeaker);
-  return !!nm && mine.test(nm);
+  /* Identity, not a word match. Testing the name regex against the roster entry
+     meant "Laura" matched a COLLEAGUE called "Laura Chen" — and because this
+     gate runs before any content is examined, tagging her as the speaker
+     silently switched off every alert for as long as she held the floor,
+     including questions she asked the actual Laura. A false alert is visible
+     and recoverable; a silent blackout is neither. */
+  var nm = normKey(speakerName(currentSpeaker) || '');
+  if (!nm) return false;
+  var mine = String(CFG.names || '').split(',');
+  for (var i = 0; i < mine.length; i++) {
+    if (normKey(mine[i]) === nm) return true;
+  }
+  return false;
 }
 
 /* Unambiguous self-reference: someone saying their OWN name. The demo case is
    an executive director opening the meeting with "this is Laura, let's start" —
    which used to fire a hard YOUR NAME WAS SAID alert at the person who just
    said it, inside the first thirty seconds. */
-var SELF_INTRO = /\b(?:this is|it'?s|i'?m|i am|my name(?:'?s| is)|here'?s)\s*$|\b(?:here|speaking)\b/i;
+/* Anchored to sit immediately BEFORE the name. The unanchored "here|speaking"
+   alternative that used to live here matched anywhere in the preceding 24
+   characters, so the ordinary phrase "Speaking of which, Laura, can you give us
+   the numbers?" was read as Laura introducing herself and the question was
+   dropped. The trailing form — "Laura here", "Laura speaking" — is caught by
+   the separate check after the name, which is correctly anchored. */
+var SELF_INTRO = /\b(?:this is|it'?s|i'?m|i am|my name(?:'?s| is)|here'?s)\s*$/i;
 function isSelfReference(text, nameIdx, nameStr) {
   var before = text.slice(Math.max(0, nameIdx - 24), nameIdx);
   var after = text.slice(nameIdx + nameStr.length, nameIdx + nameStr.length + 12);
@@ -2555,7 +2570,25 @@ function fireAlert(a) {
    shifted the offset, produced a fresh key, missed the dedupe table and
    re-raised the alert the user had just waved away — restamped as new. */
 var dismissedQuestions = [];
-function qTokens(s) { return normKey(s || '').split(/\s+/).filter(Boolean); }
+/* Compare on CONTENT words. "can you take the lead on the newsletter" and
+   "...on the budget review" share seven of eight tokens once function words
+   count, so dismissing one muted the other — a different ask, on a different
+   topic, silently swallowed. */
+var QFILLER = {};
+('can could you the a an on of for in to do does is are we i it that this and or ' +
+ 'take walk give share cover speak talk pick update run pull look check send ' +
+ 'draft handle own follow bring put set start help confirm circle write please just ' +
+ 'lead about with from what any thoughts your us me my our ' +
+ /* interjections a recogniser adds or drops between passes at the same sentence */
+ 'sorry okay ok so well um uh erm actually right yeah yep hey hi thanks quick real ' +
+ 'sure maybe also then now here there back over out up').split(' ')
+  .forEach(function (w) { QFILLER[w] = 1; });
+
+function qTokens(s) {
+  var all = normKey(s || '').split(/\s+/).filter(Boolean);
+  var content = all.filter(function (w) { return !QFILLER[w] && w.length > 2; });
+  return content.length ? content : all;      // fall back if a question is all boilerplate
+}
 
 function dismissAlert() {
   if (VIEW.alert && VIEW.alert.question) {
@@ -3004,6 +3037,11 @@ var VoiceID = (function () {
       return identify(vec);
     },
     startEnroll: function (id) { enrolling = { id: id, frames: [] }; },
+    /* Cancel has to THROW THE SAMPLE AWAY. Routing it through finishEnroll()
+       merged the captured voiceprint into the roster exactly as Save does — it
+       only skipped the toast — so a second of audio was enough for "Cancel" to
+       silently keep a recording of someone's voice characteristics. */
+    abortEnroll: function () { enrolling = null; },
     finishEnroll: function () {
       if (!enrolling) return 0;
       var vec = toVector(enrolling.frames);
@@ -4871,7 +4909,7 @@ function closeEnroll(save) {
     var n = VoiceID.finishEnroll();
     if (n) { toast('Voice sample saved.', 'ok'); CFG.autoSpeaker = true; saveCfg(); }
     else toast('Not enough clear speech to learn that voice. Try again in a quieter moment.', 'err', 8000);
-  } else { VoiceID.finishEnroll(); }
+  } else { VoiceID.abortEnroll(); }
   hide('enrollScrim'); syncSettingsUI(); renderRoster();
 }
 
@@ -5255,10 +5293,28 @@ function parseIcs(text) {
      bare LF — and leaving those folded truncated every long SUMMARY at the fold.
      That truncated string then became the meeting title AND the export filename,
      so a real invite produced notes named after half its own name. */
-  var t = String(text || '').replace(/\r?\n[ \t]/g, '');
+  var whole = String(text || '').replace(/\r?\n[ \t]/g, '');
+
+  /* Read ONLY the first VEVENT. Outlook and Exchange emit a VTIMEZONE block
+     before the event, and it contains its own DTSTART — usually 16010101 —
+     which an unanchored whole-file search finds first. A real Outlook invite
+     therefore imported as a meeting in the year 1601. Scoping here also stops
+     a file holding several events from pooling everyone's attendees into one
+     roster. */
+  var ev1 = whole.match(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/i);
+  var t = ev1 ? ev1[1] : whole;
+
+  /* RFC 5545 escapes inside a value: \\ \, \; and \n. Left in place, a
+     summary of "Budget\, Forecast" became a title with a literal backslash. */
+  function unesc(v) {
+    return String(v).replace(/\\([\\,;nN])/g, function (m, c) {
+      return (c === 'n' || c === 'N') ? ' ' : c;
+    });
+  }
+
   function field(name) {
     var m = t.match(new RegExp('^' + name + '[^:\\r\\n]*:(.*)$', 'mi'));
-    return m ? m[1].trim() : '';
+    return m ? unesc(m[1].trim()) : '';
   }
   function icsDate(v) {
     var raw = String(v);
@@ -5270,12 +5326,22 @@ function parseIcs(text) {
        local, so the invite you just loaded was confirmed back at the wrong
        hour by your whole offset from UTC. A TZID or floating time has no Z and
        is genuinely local, so it still goes through the local constructor. */
-    if (/Z\s*$/.test(raw)) return new Date(Date.UTC(y, mo, d, h, mi, se));
+    /* A trailing Z on a value with no time component is not spec-legal, but some
+       generators emit it; treating it as UTC midnight shifted the date a day
+       backwards for anyone west of Greenwich. */
+    if (/Z\s*$/.test(raw) && /T/.test(raw)) return new Date(Date.UTC(y, mo, d, h, mi, se));
     return new Date(y, mo, d, h, mi, se);
   }
   var names = [], re = /^ATTENDEE[^:\r\n]*?CN=([^;:\r\n]+)/gmi, mm;
   while ((mm = re.exec(t))) {
-    var nm = mm[1].replace(/^"|"$/g, '').trim();
+    var nm = unesc(mm[1]).replace(/^"|"$/g, '').trim();
+    /* Exchange writes CN="Chen, Sarah". The comma is part of ONE name, but the
+       roster is fed from a comma-joined string, so it split her into two
+       people — corrupting attribution and the "Present:" line of every export. */
+    if (/^[^,]+,\s*[^,]+$/.test(nm)) {
+      var pieces = nm.split(',');
+      nm = pieces[1].trim() + ' ' + pieces[0].trim();
+    }
     if (nm.indexOf('@') > -1) nm = nm.split('@')[0].replace(/[._]/g, ' ');
     if (nm && names.indexOf(nm) === -1) names.push(nm);
   }
@@ -6151,11 +6217,16 @@ function bindUI() {
     s.addEventListener('click', function (e) { if (e.target === s) { confirmCb = null; s.classList.add('hidden'); } });
   });
 
+  /* These re-enter the copy/open path without going back through catchMeUp(),
+     so flipping Sensitive on while the handoff panel is open left a live button
+     that would still put the whole transcript on the clipboard. */
   $('handoffCopy').addEventListener('click', async function () {
+    if (CFG.sensitive) { toast('This meeting is marked sensitive — nothing was copied.', 'err', 8000); return; }
     var ok = await copyToClipboard($('handoffText').value);
     toast(ok ? 'Copied again.' : 'Clipboard refused — the text is selected, press Ctrl+C.', ok ? 'ok' : 'err');
   });
   $('handoffOpen').addEventListener('click', function () {
+    if (CFG.sensitive) { toast('This meeting is marked sensitive — the handoff is off.', 'err', 8000); return; }
     if (!openClaudeTab(CLAUDE_NEW)) toast('Blocked — local-only mode has outbound navigation disabled.', 'err');
   });
   $('handoffApply').addEventListener('click', function () {
