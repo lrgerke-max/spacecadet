@@ -4002,9 +4002,16 @@ var MODEL_CAPS = {
 };
 function modelCaps(m) { return MODEL_CAPS[m] || MODEL_CAPS['claude-sonnet-5']; }
 
-function noteUsage(usage) {
+/* `model` is the model the REQUEST was built with, not whatever the dropdown
+   says now. Re-reading CFG.model here priced a finished call at the rate of a
+   model it never went to: switch Opus down to Haiku while a call is in flight —
+   an obvious thing to do mid-meeting when the meter looks high — and the
+   expensive call is recorded at the cheap rate. That same total is what the
+   spend cap compares against, so real spend could pass the ceiling while the
+   screen still read "under budget". */
+function noteUsage(usage, model) {
   if (!usage) return;
-  var p = priceOf(CFG.model);
+  var p = priceOf(model || CFG.model);
   var i = usage.input_tokens || 0, o = usage.output_tokens || 0;
   MEET.cost.inTok += i;
   MEET.cost.outTok += o;
@@ -4052,8 +4059,9 @@ async function callAnthropic(system, userContent, opts) {
   var maxTok = opts.maxTokens || 2000;
   if (caps.thinks && !noThink) maxTok = Math.max(maxTok, 4000);
 
+  var reqModel = CFG.model;          // whatever it is NOW; the reply is priced at this
   var body = {
-    model: CFG.model,
+    model: reqModel,
     max_tokens: maxTok,
     system: system,
     messages: [{ role: 'user', content: userContent }]
@@ -4087,7 +4095,7 @@ async function callAnthropic(system, userContent, opts) {
   if (data && data.stop_reason === 'max_tokens') {
     var te = new Error('the reply hit the length limit before it finished');
     te.status = 0; te.truncated = true;
-    noteUsage(data.usage);                                  // it was still billed
+    noteUsage(data.usage, reqModel);                        // it was still billed
     throw te;
   }
 
@@ -4095,7 +4103,7 @@ async function callAnthropic(system, userContent, opts) {
      once the meeting has been marked sensitive mid-flight. The charge is metered
      first regardless: Anthropic bills for a call whose answer we throw away, and
      a cost readout that quietly omits it is a cost readout that lies. */
-  noteUsage(data.usage);
+  noteUsage(data.usage, reqModel);
   if (CFG.sensitive) throw new Error('sensitive meeting: response discarded');
   VIEW.api.latency = latency;
 
