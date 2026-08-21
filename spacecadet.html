@@ -267,11 +267,13 @@
     position:relative;overflow:hidden;
   }
   #nowZone:before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--spectrum)}
-  #nowZone.changed{animation:topicFlash 2.2s ease-out}
-  @keyframes topicFlash{
-    0%{background:#eff6ff;border-color:#93c5fd;box-shadow:0 0 0 4px #3b82f61f}
-    100%{background:var(--card);border-color:var(--line);box-shadow:var(--shadow)}
-  }
+  /* Every other animation here is transform/opacity only, so it stays on the
+     compositor. This one animated background, border and shadow — ~130 painted
+     frames on a panel that repaints twice a second anyway. */
+  #nowZone.changed{position:relative}
+  #nowZone.changed:after{content:"";position:absolute;inset:0;border-radius:inherit;
+    pointer-events:none;background:#eff6ff;animation:topicFlash 2.2s ease-out}
+  @keyframes topicFlash{ 0%{opacity:.85} 100%{opacity:0} }
   #nowZone .zoneLabel{border-bottom:0;padding-bottom:0;margin-bottom:4px;font-size:11px;
     font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.06em}
   #topic{
@@ -669,7 +671,8 @@
   <!-- ------------------------------------------------------- status bar -->
   <div id="statusbar">
     <span id="brand"><span id="brandMark"></span>SpaceCadet</span>
-    <span id="recBadge" class="hidden" title="This meeting is being transcribed">
+    <span id="recBadge" class="hidden" role="status" aria-live="polite"
+          title="This meeting is being transcribed">
       <span class="recDot"></span>Recording</span>
     <span class="sbItem"><span class="dot" id="sbCapDot"></span><b id="sbCap">Idle</b></span>
     <span class="sbItem shrink" id="sbSttWrap"><b id="sbStt">Web Speech</b></span>
@@ -1698,8 +1701,15 @@ function toast(msg, kind, ttl) {
     el.style.transition = 'opacity .3s'; el.style.opacity = '0';
     setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
   }, ttl || 4200);
-  toastTimers.push(t);
-  if (toastTimers.length > 40) clearTimeout(toastTimers.shift());
+  toastTimers.push({ t: t, el: el });
+  /* Evicting used to clearTimeout the oldest handle — but that handle IS the
+     one that fades and removes its own toast, so cancelling it stranded that
+     node in the DOM forever. Take the node out directly instead. */
+  while (toastTimers.length > 40) {
+    var old = toastTimers.shift();
+    clearTimeout(old.t);
+    if (old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
+  }
 }
 
 /* Normalise a phrase for dedupe: lowercase, strip punctuation, collapse space. */
@@ -1840,9 +1850,72 @@ function load(key, defaults) {
   return out;
 }
 var saveCfgTimer = null;
+
+/* ---- one storage area, possibly several copies of the app ----------------
+   Every file:// page in a browser profile shares ONE localStorage origin, so
+   "spacecadet.html" and "spacecadet (1).html" in the Downloads folder are not
+   two installs — they are two front-ends onto the same three keys. Opening the
+   second one and closing it would write its whole in-memory state over the copy
+   that had the live meeting in it, silently.
+
+   The fix is deliberately small: whichever copy the user last actually saved
+   from owns storage, and a copy that has been superseded stops writing on the
+   way out. Nothing is namespaced by filename — a settings file that vanished
+   because someone renamed the html would be a worse bug than the one being
+   fixed here. */
+var OWNER_KEY = 'spacecadet.owner.v1';
+var INSTANCE_ID = String(Date.now()) + '.' + Math.random().toString(36).slice(2, 8);
+var storageOwned = true;      // may this copy write to the shared keys?
+var warnedOtherCopy = false;
+
+function claimStorage() {
+  storageOwned = true;
+  try { localStorage.setItem(OWNER_KEY, INSTANCE_ID); } catch (e) {}
+}
+
+/* Fired only in the OTHER documents of the origin, never in the writer.
+   A copy that is mid-meeting keeps its claim — an idle sibling opened by
+   mistake must not stop the live one from persisting. Anything idle yields,
+   which is what makes a stale tab from yesterday harmless. The re-claim is
+   throttled so that two copies both capturing settle into a slow alternation
+   with a visible warning on both, rather than a write loop. */
+var lastReclaim = 0;
+function onStorageClaim(e) {
+  if (!e || e.key !== OWNER_KEY || !e.newValue || e.newValue === INSTANCE_ID) return;
+  var busy = listening || starting;
+  if (busy && Date.now() - lastReclaim > 30000) {
+    lastReclaim = Date.now();
+    claimStorage();
+    warnOtherCopy('This window is mid-meeting, so it has kept saving; the other copy will not save.');
+    return;
+  }
+  storageOwned = false;
+  warnOtherCopy('This window has stopped saving so it cannot overwrite the other one. Close the other ' +
+                'copy and reload here, or just carry on there.');
+}
+
+function warnOtherCopy(what) {
+  if (warnedOtherCopy) return;
+  warnedOtherCopy = true;
+  toast('Another copy of SpaceCadet is open in this browser, and every copy shares one saved-settings ' +
+        'area. ' + what, 'warn', 20000);
+}
+
+/* Write CFG right now, bypassing the debounce. The 250ms window is invisible
+   until you add someone to the roster and close the tab in the same breath —
+   which is exactly when people touch that screen, just before a meeting. */
+function flushCfg() {
+  clearTimeout(saveCfgTimer);
+  if (!storageOwned) return;
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(CFG)); } catch (e) {}
+}
+
 function saveCfg() {
   clearTimeout(saveCfgTimer);
   saveCfgTimer = setTimeout(function () {
+    /* A save the user asked for is proof this is the copy being used, so it
+       takes ownership back from an idle sibling rather than deferring to it. */
+    claimStorage();
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(CFG)); }
     catch (e) { /* private mode / quota */ }
   }, 250);
@@ -1903,10 +1976,14 @@ function restoreMeeting() {
     MEET.glossary  = arrOf(p.glossary, function (x) { return x && typeof x === 'object' && typeof x.term === 'string'; });
     MEET.timeline  = arrOf(p.timeline, function (x) { return x && typeof x === 'object' && typeof x.topic === 'string'; });
     MEET.alerts    = arrOf(p.alerts, function (x) { return x && typeof x === 'object'; });
+    dismissedQuestions = arrOf(p.dismissed, function (x) {
+      return x && typeof x === 'object' && Array.isArray(x.toks) && isFinite(x.t);
+    });
     MEET.frags     = arrOf(p.frags, function (x) { return x && typeof x === 'object' && typeof x.text === 'string'; });
     MEET.cost = (p.cost && typeof p.cost === 'object' && isFinite(p.cost.usd))
       ? { inTok: +p.cost.inTok || 0, outTok: +p.cost.outTok || 0, calls: +p.cost.calls || 0, usd: +p.cost.usd || 0 }
       : { inTok: 0, outTok: 0, calls: 0, usd: 0 };
+    MEET.truncated = !!p.truncated;
     MEET.startedAt = isFinite(p.startedAt) ? +p.startedAt : now();
     MEET.lastSentT = isFinite(p.lastSentT) ? +p.lastSentT : 0;
     MEET.llmTopic = typeof p.llmTopic === 'string' ? p.llmTopic : '';
@@ -1939,6 +2016,7 @@ function saveMeeting() {
 }
 function doSaveMeeting() {
   if (!MEET.startedAt) return;
+  if (!storageOwned) return;
   /* Persist a capped tail of the transcript: localStorage is ~5MB and a long
      meeting will happily exceed it. Everything else is small. */
   var cap = 900;
@@ -1955,6 +2033,10 @@ function doSaveMeeting() {
       decisions: MEET.decisions.slice(-itemCap), issues: MEET.issues.slice(-itemCap),
       actions: MEET.actions.slice(-itemCap), glossary: MEET.glossary.slice(-itemCap),
       timeline: MEET.timeline.slice(-200), alerts: MEET.alerts.slice(-40), cost: MEET.cost,
+      /* A dismissal has to survive a refresh. Without this the question someone
+         just waved away came straight back after a reload, in the same meeting,
+         while the room was still discussing it. */
+      dismissed: dismissedQuestions.slice(-20),
       lastSentT: MEET.lastSentT, llmTopic: MEET.llmTopic, llmBullets: MEET.llmBullets,
       llmTalkingPoints: MEET.llmTalkingPoints, llmAt: MEET.llmAt,
       truncated: MEET.frags.length > n
@@ -2316,7 +2398,20 @@ var lastOtherHitAt = 0;
    earlier" — is only being mentioned. Telling those apart is the whole job. */
 function vocativePattern(alts) {
   var n = '(?:' + alts.join('|') + ')';
-  return new RegExp('(^|[,;:.!?]\\s*)' + n + '\\s*[,?!.:]|,\\s*' + n + '\\s*[?!.]?\\s*$', 'i');
+  /* Requiring punctuation next to the name was wrong for the only input this
+     ever sees: a speech recogniser writes "Sarah can you take the budget item"
+     without the comma far more often than with it. Unattributed, that question
+     fell through to the user and — if their name had been said in the previous
+     twelve seconds — fired the LOUDEST alert claiming they had been asked
+     something plainly addressed to a colleague.
+
+     Three shapes, all anchored to a clause boundary so a mere mention ("I think
+     Sarah can handle it") is still not a vocative:
+       Sarah, can you…   |   Sarah can you…   |   …can you take that, Sarah? */
+  return new RegExp(
+    '(^|[,;:.!?]\\s*)' + n + '\\s*[,?!.:]' +
+    '|(^|[,;:.!?]\\s*)' + n + '\\s+(?:can|could|would|will|do|does|are|any|what|how|got|please)\\b' +
+    '|[,\\s]' + n + '\\s*[?!.]?\\s*$', 'i');
 }
 function myNameAlternatives() {
   return String(CFG.names || '').split(',')
@@ -2339,7 +2434,11 @@ function otherPersonAddressed(text, qIdx, qLen) {
   for (var i = 0; i < CFG.roster.length; i++) {
     var nm = String(CFG.roster[i].name || '').trim();
     if (nm.length < 2) continue;
-    if (mine && mine.test(nm)) continue;                 // that roster entry IS the user
+    /* Exact identity, not a word match. This second own-name check was missed
+       when userIsSpeaking() was hardened: "Laura Chen" CONTAINS "Laura", so her
+       roster entry was skipped as though it were the user's — and a question
+       plainly addressed to her by full name then fired a hard alert at Laura. */
+    if (isMyName(nm)) continue;                          // that roster entry IS the user
     /* Vocative POSITION, not mere presence. "Sarah, can you…" and "…can you,
        Sarah?" address her; "what Sarah raised earlier, can you look at it?"
        only mentions her, and treating that as addressed silently swallowed a
@@ -2397,14 +2496,48 @@ var SELF_INTRO = /\b(?:this is|it'?s|i'?m|i am|my name(?:'?s| is)|here'?s)\s*$/i
 function isSelfReference(text, nameIdx, nameStr) {
   var before = text.slice(Math.max(0, nameIdx - 24), nameIdx);
   var after = text.slice(nameIdx + nameStr.length, nameIdx + nameStr.length + 12);
+  /* "This is Laura's slide" is a possessive, not an introduction. Reading it as
+     one silenced the question that followed it in the same breath — and a chair
+     handing over an agenda item says exactly that: "This is Laura's grant,
+     Laura, any concerns?" */
+  if (/^['\u2019]s\b|^s['\u2019]/i.test(after)) return false;
   return SELF_INTRO.test(before) || /^\s*(?:here|speaking)\b/i.test(after);
+}
+
+/* Is this string one of the names the user answers to? Exact, not a word match:
+   the difference between "Laura" and a colleague called "Laura Chen". */
+function isMyName(s) {
+  var k = normKey(s || '');
+  if (!k) return false;
+  var mine = String(CFG.names || '').split(',');
+  for (var i = 0; i < mine.length; i++) if (normKey(mine[i]) === k) return true;
+  return false;
+}
+
+/* Every occurrence of the user's name in the fragment, not just the first.
+   One sentence can mention them and then address them — "This is Laura's item,
+   Laura, can you update us?" — and stopping at the first match meant an
+   innocuous lead-in swallowed the real question behind it. */
+function allNameHits(text) {
+  var re = buildNameRegex();
+  if (!re) return [];
+  var g = new RegExp(re.source, 'gi'), out = [], m, guard = 0;
+  while ((m = g.exec(text)) && guard++ < 40) {
+    out.push(m);
+    if (m.index === g.lastIndex) g.lastIndex++;
+  }
+  return out;
 }
 var recentAlertKeys = {};      // key -> t, so one utterance cannot fire ten times
 
 function scanFragment(text, t) {
   if (!text) return;
-  var re = buildNameRegex();
-  var nameHit = re ? re.exec(text) : null;
+  /* Take the first occurrence that is NOT a self-reference. A fragment can open
+     with "this is Laura's item" and go on to ask Laura something directly. */
+  var hits = allNameHits(text), nameHit = null, allSelf = hits.length > 0;
+  for (var h = 0; h < hits.length; h++) {
+    if (!isSelfReference(text, hits[h].index, hits[h][0])) { nameHit = hits[h]; allSelf = false; break; }
+  }
   if (nameHit) lastNameHitAt = t;
 
   var qHit = null;
@@ -2421,8 +2554,7 @@ function scanFragment(text, t) {
      or "Laura here, can everyone hear me?" — raised a hard alert at the person
      who had just spoken. Suppressed two ways: when a tagged speaker resolves to
      the user, and when the sentence is an unmistakable self-introduction. */
-  if (userIsSpeaking() ||
-      (nameHit && isSelfReference(text, nameHit.index, nameHit[0]))) {
+  if (userIsSpeaking() || allSelf) {
     lastNameHitAt = 0;                    // and it must not prime the 12s follow-on window either
     return;                               // your own question is not a question for you
   }
@@ -3224,7 +3356,10 @@ function WebSpeechEngine() {
           toast('Microphone access was blocked. Click Allow when your browser asks. Opening SpaceCadet from a ' +
                 'web address instead of a saved file lets the browser remember it.', 'err', 12000);
           /* Do not keep claiming to be live when the engine is dead. */
-          setTimeout(function () { if (listening) stopListening(); }, 0);
+          /* Gate on THIS start, not on the shared flag: an old engine dying
+             after the user had already restarted would otherwise stop the new,
+             healthy session with no explanation. */
+          (function (g) { setTimeout(function () { if (listening && g === startGen) stopListening(); }, 0); })(startGen);
           break;
         case 'network':
           consecutiveFails++;
@@ -3270,7 +3405,7 @@ function WebSpeechEngine() {
         sttStatus('gave up after repeated failures', 'err');
         toast('Transcription kept failing, so it has stopped. Check your microphone, or switch to ' +
               'on-device transcription in Settings.', 'err', 12000);
-        setTimeout(function () { if (listening) stopListening(); }, 0);
+        (function (g) { setTimeout(function () { if (listening && g === startGen) stopListening(); }, 0); })(startGen);
         return;
       }
 
@@ -3312,7 +3447,12 @@ function WebSpeechEngine() {
       shouldBeRunning = false;                            // clear FIRST, before anything can fire onend
       clearTimeout(restartTimer);
       if (rec) {
-        rec.onend = null; rec.onerror = null; rec.onresult = null;
+        /* onstart was left wired. Chrome restarts recognition on its own every
+           silence cutoff, so a stop landing while one of those starts was in
+           flight let the stale onstart fire afterwards and put the chip back to
+           "listening" — with the engine gone and the mic released. During a
+           panic-hide that is the indicator claiming to record when nothing is. */
+        rec.onend = null; rec.onerror = null; rec.onresult = null; rec.onstart = null;
         try { rec.abort(); } catch (e) {}
       }
       rec = null;
@@ -3323,15 +3463,25 @@ function WebSpeechEngine() {
 }
 
 /* ---------------------------------------------------- Engine B: local Whisper */
+/* Outlives individual engine instances. The browser caches the weights; it does
+   not cache the initialised session, and that is the expensive half. */
+var whisperPipe = null, whisperBackend = '';
+
 function WhisperEngine() {
   var ctx = null, srcNode = null, proc = null, sink = null;
-  var chunks = [], samples = 0, running = false;
+  var chunks = [], samples = 0, running = false, stopped = false;
   /* `running` gates CAPTURE. `live` gates the status chip, which doubles as the
      recording indicator: a transcription still in flight when Stop is pressed
      must still deliver its text — that speech really was said — but must not
      flip the chip from "stopped" back to "whisper · 1.2s" behind the user. */
   var live = false;
-  var pipe = null, busy = false, pending = null, backend = '';
+  /* pipe/backend live at module scope: startListening() builds a NEW
+     WhisperEngine on every Start and stopListening() drops the old one, so
+     holding the loaded pipeline in the closure meant that pausing for a break
+     and resuming re-imported the library and rebuilt the ONNX session from
+     scratch — seconds of "downloading model…" every time, on a page that
+     promises it downloads once. */
+  var busy = false, pending = null;
   var onFrag = null;
 
   /* Resample arbitrary-rate mono Float32 to the 16 kHz Whisper requires.
@@ -3356,8 +3506,8 @@ function WhisperEngine() {
   }
 
   async function ensurePipeline() {
-    if (pipe) return pipe;
-    if (CFG.sensitive && !pipe) {
+    if (whisperPipe) return whisperPipe;
+    if (CFG.sensitive && !whisperPipe) {
       throw captureError('On-device transcription needs a one-time download, which a sensitive meeting blocks.',
         'Download it once outside a sensitive meeting; afterwards it is cached and works fully offline.');
     }
@@ -3421,25 +3571,25 @@ function WhisperEngine() {
          WebGPU; a full-fp16 whisper encoder is known to lose precision. */
       if (navigator.gpu) {
         try {
-          pipe = await withTimeout(pipeline('automatic-speech-recognition', model, {
+          whisperPipe = await withTimeout(pipeline('automatic-speech-recognition', model, {
             device: 'webgpu',
             dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
             progress_callback: progress
           }), 300000, 'the model download');
-          backend = 'webgpu';
+          whisperBackend = 'webgpu';
           settle(noteHf, 'ok'); settle(noteLfs, 'ok');
           sttStatus('whisper ready (webgpu)', 'ok');
-          return pipe;
+          return whisperPipe;
         } catch (e) { lastErr = e; }
       }
       try {
-        pipe = await withTimeout(pipeline('automatic-speech-recognition', model, {
+        whisperPipe = await withTimeout(pipeline('automatic-speech-recognition', model, {
           device: 'wasm', dtype: 'q8', progress_callback: progress
         }), 300000, 'the model download');
-        backend = 'wasm';
+        whisperBackend = 'wasm';
         settle(noteHf, 'ok'); settle(noteLfs, 'ok');
         sttStatus('whisper ready (wasm)', 'ok');
-        return pipe;
+        return whisperPipe;
       } catch (e2) { lastErr = e2; }
     }
     settle(noteHf, 'failed'); settle(noteLfs, 'failed');
@@ -3459,14 +3609,14 @@ function WhisperEngine() {
     try {
       var audio = await to16k(float32, srcRate);
       var t0 = now();
-      var out = await pipe(audio);
+      var out = await whisperPipe(audio);
       var text = (out && (out.text || (out[0] && out[0].text))) || '';
       text = String(text).trim();
       if (text && !WHISPER_JUNK.test(text.trim())) {
         onFrag({ text: text, isFinal: true, t: tEnd });
-        if (live) sttStatus('whisper ' + backend + ' · ' + Math.round((now() - t0) / 100) / 10 + 's', 'ok');
+        if (live) sttStatus('whisper ' + whisperBackend + ' · ' + Math.round((now() - t0) / 100) / 10 + 's', 'ok');
       } else if (live) {
-        sttStatus('whisper ' + backend + ' · silence', 'ok');
+        sttStatus('whisper ' + whisperBackend + ' · silence', 'ok');
       }
     } catch (e) {
       if (live) sttStatus('transcribe failed: ' + (e && e.message ? e.message : e), 'err');
@@ -3529,10 +3679,21 @@ function WhisperEngine() {
       sink.gain.value = 0;
       srcNode.connect(proc); proc.connect(sink); sink.connect(ctx.destination);
 
+      /* Stop can land while ensurePipeline() is still away — a proxied model
+         download runs for minutes. Without this the abandoned start finished
+         anyway, built an AudioContext nothing held a reference to and set
+         itself live: CPU burning, one of Chrome's context slots gone for the
+         rest of the page, and the status chip claiming to be listening. */
+      if (stopped) {
+        try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
+        ctx = null; srcNode = null; proc = null; sink = null;
+        return;
+      }
       running = true; live = true;
-      sttStatus('whisper listening (' + backend + ')', 'ok');
+      sttStatus('whisper listening (' + whisperBackend + ')', 'ok');
     },
     stop: function () {
+      stopped = true;
       /* Transcribe the tail BEFORE tearing the graph down. Whatever is buffered
          is real speech from the last few seconds — people talk right up until
          they press Stop — and this used to be discarded silently, so the last
@@ -3569,7 +3730,24 @@ var startGen = 0;
 function abandonStart(stream, eng) {
   try { if (eng) eng.stop(); } catch (e) {}
   if (stream) stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
-  VoiceID.detach();
+}
+
+/* A start that lost its race must tear down ONLY what it created. Reading the
+   shared globals here released the WINNER's microphone and engine and then
+   nulled them, after which Stop had nothing left to stop and Chrome kept the
+   device open — the same bug the `acquired` local fixed at the first gate,
+   surviving at the two later ones. Globals are cleared only if they still hold
+   this start's objects, and the UI is only reset if nothing newer is running. */
+function abandonMine(gen, stream, eng) {
+  abandonStart(stream, eng);
+  if (captureStream === stream) captureStream = null;
+  if (engine === eng) engine = null;
+  if (gen === startGen) {
+    starting = false;
+    VoiceID.detach();
+    VIEW.capture = 'idle'; VIEW.captureMsg = '';
+  }
+  renderSoon();
 }
 
 /* Web Speech physically cannot consume a getDisplayMedia stream — it opens its own
@@ -3617,9 +3795,14 @@ async function startListening() {
   var myGen = ++startGen;
   VIEW.capture = 'starting'; VIEW.captureMsg = 'requesting audio…'; renderSoon();
 
+  /* Everything this start creates is held in locals and only published to the
+     shared globals once it is clear this start is still the current one. */
+  var acquired = null, myEngine = null;
+
   try {
-    captureStream = await acquireStream(CFG.source);
+    acquired = await acquireStream(CFG.source);
   } catch (e) {
+    if (myGen !== startGen) { abandonMine(myGen, null, null); return; }
     starting = false;
     VIEW.capture = 'error';
     VIEW.captureMsg = e && e.name === 'NotAllowedError' ? 'permission denied' : 'capture failed';
@@ -3640,23 +3823,28 @@ async function startListening() {
     return;
   }
 
-  /* A stop or an Esc that landed while we were awaiting permission must win. */
-  if (myGen !== startGen) { abandonStart(captureStream, null); captureStream = null; starting = false;
-    VIEW.capture = 'idle'; renderSoon(); return; }
+  /* A stop, a panic or a newer start that landed while we were awaiting
+     permission must win — and this start must release the device it just took. */
+  if (myGen !== startGen) { abandonMine(myGen, acquired, null); return; }
+  captureStream = acquired;
 
   /* S5: bind the handler to THIS stream. Previously an orphaned stream ending
      tore down whatever capture happened to be live at the time. */
-  var myStream = captureStream;
-  watchTrackEnd(myStream, function () {
-    if (!listening || myStream !== captureStream) return;
+  watchTrackEnd(acquired, function () {
+    if (!listening || acquired !== captureStream) return;
     toast('The audio source ended — screen sharing was stopped, or the device disappeared.', 'err', 8000);
     stopListening();
   });
 
-  engine = CFG.engine === 'whisper' ? WhisperEngine() : WebSpeechEngine();
+  myEngine = CFG.engine === 'whisper' ? WhisperEngine() : WebSpeechEngine();
+  engine = myEngine;
   try {
-    await engine.start(captureStream, onFragment);
+    await myEngine.start(acquired, onFragment);
   } catch (e) {
+    /* A start that has already been superseded must not report its failure over
+       the top of the session that replaced it. */
+    if (myGen !== startGen) { abandonMine(myGen, acquired, myEngine); return; }
+
     starting = false;
     VIEW.capture = 'error';
     VIEW.captureMsg = 'engine failed';
@@ -3668,35 +3856,29 @@ async function startListening() {
        recogniser because a CDN was blocked would break that promise without the
        word "Google" ever appearing. Stop, and make the user choose again. */
     if (CFG.engine === 'whisper') {
-      abandonStart(captureStream, engine);
-      captureStream = null; engine = null; starting = false;
-      VIEW.capture = 'idle'; VIEW.captureMsg = '';
+      abandonMine(myGen, acquired, myEngine);
       CFG.firstRunDone = false; saveCfg();
       toast('On-device transcription could not load, so nothing was started. Choose again — the ' +
             'alternative sends your audio to Google.', 'err', 13000);
-      renderSoon();
       showFirstRun({ step: 2, thenStart: true });
       return;
     }
     stopListening(); renderSoon(); return;
   }
 
+  /* Final gate: a stop or panic during engine startup wins. */
+  if (myGen !== startGen) { abandonMine(myGen, acquired, myEngine); return; }
+
   /* Feature tap for voice matching. Analyser only — it is never routed to the
-     speakers and never leaves this function. */
-  if (CFG.source === 'mic') VoiceID.attach(captureStream);
+     speakers and never leaves this function. Attached only once this start has
+     won, so a loser never points the analyser at the winner's stream. */
+  if (CFG.source === 'mic') VoiceID.attach(acquired);
 
   /* Sharing your screen means colleagues can see this. Going quiet should not
      depend on remembering to press V at the exact moment it matters. */
   if (CFG.source === 'system' && !CFG.discreet) {
     setDiscreet(true);
     toast('Screen sharing detected — switched to discreet layout so this is less conspicuous.', '', 7000);
-  }
-
-  /* Final gate: a stop or panic during engine startup wins. */
-  if (myGen !== startGen) {
-    abandonStart(captureStream, engine);
-    captureStream = null; engine = null; starting = false;
-    VIEW.capture = 'idle'; renderSoon(); return;
   }
 
   starting = false;
@@ -4632,7 +4814,10 @@ function renderSoon() {
 }
 
 function render() {
-  syncSettingsInert();      // single source of truth: the settingsOpen class
+  /* Single source of truth: the settingsOpen class. Reconciling BOTH inert
+     flags every frame means no code path can leave the app inert — and
+     therefore dead to clicks — by removing the class without saying so. */
+  syncSettingsInert(); syncAppInert();
   renderStatusBar();
   renderNow();
   renderHappened();
@@ -4883,6 +5068,8 @@ function renderRoster() {
   CFG.roster.forEach(function (r, i) {
     var b = document.createElement('button');
     b.className = 'spk' + (r.id === currentSpeaker ? ' on' : '') + (r.enrolled ? ' hasVoice' : '');
+    /* Colour alone said who was speaking. A screen reader had no idea. */
+    b.setAttribute('aria-pressed', r.id === currentSpeaker ? 'true' : 'false');
     if (r.id === currentSpeaker) { b.style.background = speakerColor(r.id); b.style.borderColor = speakerColor(r.id); }
     /* Only nine number keys exist, but the roster holds twelve. Entries past
        the ninth are click-only, so do not tell someone to "press 10". */
@@ -5059,7 +5246,8 @@ function renderPanels() {
     ? MEET.issues.map(function (d, i) { return { d: d, i: i }; }).reverse().map(function (o) {
         return '<li class="' + (o.d.done ? 'itemDone' : '') + '">' +
                '<input type="checkbox" class="doneBox" data-done="iss" data-i="' + o.i + '"' +
-               (o.d.done ? ' checked' : '') + ' title="Mark solved">' +
+               (o.d.done ? ' checked' : '') +
+               ' title="Mark solved" aria-label="Mark solved: ' + esc(o.d.text) + '">' +
                esc(o.d.text) + '<span class="who">' + hhmm(o.d.t) + '</span>' +
                (o.d.carried ? '<span class="carryTag">carried</span>' : '') +
                tags(o.d, 'iss', o.i) + '</li>'; }).join('')
@@ -5072,7 +5260,8 @@ function renderPanels() {
         var a = o.a;
         return '<li class="' + (a.mine ? 'mine ' : '') + (a.done ? 'itemDone' : '') + '">' +
           '<input type="checkbox" class="doneBox" data-done="act" data-i="' + o.i + '"' +
-          (a.done ? ' checked' : '') + ' title="Mark done">' +
+          (a.done ? ' checked' : '') +
+          ' title="Mark done" aria-label="Mark done: ' + esc(a.text) + '">' +
           esc(a.text) +
           (a.carried ? '<span class="carryTag" title="Carried from ' + esc(a.from || 'a previous meeting') +
                        '">carried</span>' : '') +
@@ -5152,7 +5341,9 @@ function renderNetLog() {
 
 /* ===================================================================== 18. modals */
 
+var scrimOpener = {};
 function show(id) {
+  scrimOpener[id] = document.activeElement;
   $(id).classList.remove('hidden');
   /* Move focus into the dialog; without this a screen-reader or keyboard user
      stays outside it and Tab walks the page behind. */
@@ -5161,7 +5352,11 @@ function show(id) {
     if (f && f.focus) { try { f.focus(); } catch (e) {} }
   }, 30);
 }
-function hide(id) { $(id).classList.add('hidden'); }
+function hide(id) {
+  var back = scrimOpener[id]; scrimOpener[id] = null;
+  if (back && back.focus && document.contains(back)) {
+    setTimeout(function () { try { back.focus(); } catch (e) {} }, 0);
+  } $(id).classList.add('hidden'); }
 
 /* In-app confirmation. A raw browser confirm() looked like an unfinished
    prototype the moment it appeared in a demo. */
@@ -5261,7 +5456,9 @@ function syncEosUI() { document.body.classList.toggle('eos', eosOn()); }
    clicking IDS to correct it hit the toggle and silently un-stamped it. */
 function syncSegmentUI() {
   Array.prototype.forEach.call(document.querySelectorAll('#segbar .segp'), function (b) {
-    b.classList.toggle('on', b.getAttribute('data-seg') === CFG.segment);
+    var on = b.getAttribute('data-seg') === CFG.segment;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
 }
 
@@ -5281,9 +5478,22 @@ function setSegment(name) {
 }
 
 /* Settings portability, so twelve branches can run one configuration. */
+/* This meeting's own content, which no other branch has any use for: the
+   title, the free-text pre-meeting notes, the agenda position. The roster and
+   participants DO travel on purpose — moving a built-up set of voiceprints to a
+   new laptop is a real reason to use this — and the sensitive-meeting guard
+   above is what stops any of it leaving during a meeting that must not leak. */
+var NOT_PORTABLE = { meetingTitle: 1, context: 1, segment: 1 };
+
 function exportSettings() {
+  /* Every sibling export refuses while a meeting is marked sensitive; this one
+     never asked, and it was the one that travels between machines. */
+  if (!exportGuard()) return;
   var out = {};
-  for (var k in CFG) if (k !== 'apiKey' && k.charAt(0) !== '_') out[k] = CFG[k];  // the key never travels
+  for (var k in CFG) {
+    if (k === 'apiKey' || k.charAt(0) === '_' || NOT_PORTABLE[k]) continue;  // the key never travels
+    out[k] = CFG[k];
+  }
   out._app = 'spacecadet'; out._version = APP_VERSION;
   var blob, url;
   try {
@@ -5320,6 +5530,13 @@ function importSettings(text) {
     if (k === 'names') v = String(v).slice(0, 500);
     CFG[k] = v; n++;
   }
+  /* Re-derive the forced lock from the type, ALWAYS. It used to live only in
+     the settings dropdown's change handler, so importing {"meetingType":
+     "personnel"} retyped the meeting as a personnel matter while leaving
+     Sensitive off and unlocked — and export, the claude.ai handoff and the API
+     all gate on `sensitive`, not on the type. The lock has to sit with the
+     state, not with the widget that usually sets it. */
+  enforceMeetingTypeLock();
   saveCfg(); syncSettingsUI(); buildNameRegex(); renderSoon();
   toast(n + ' settings applied.' + (skipped ? ' ' + skipped + ' security setting' + (skipped > 1 ? 's were' : ' was') +
         ' ignored — sensitivity, backend, retention and spend cap can only be changed here.' : ''), 'ok', 9000);
@@ -5526,8 +5743,25 @@ function renderTranscript(filter) {
   var bmAt = {};
   MEET.bookmarks.forEach(function (b) { bmAt[Math.floor(b.t / 1000)] = b; });
 
+  /* Build a bounded number of rows. A two-hour meeting is thousands of
+     fragments and every one was stringified on open; past a few hundred nobody
+     is reading them, and the cost is paid on the main thread. Newest first is
+     wrong for a transcript, so this keeps the LAST N — the part being read. */
+  var TS_MAX = 600;
+  var matchTotal = 0;
+  if (f) {
+    for (var c = 0; c < rows.length; c++) if (rows[c].text.toLowerCase().indexOf(f) > -1) matchTotal++;
+  } else matchTotal = rows.length;
+  var skipUntil = 0, over = matchTotal - TS_MAX;
+  if (over > 0) {
+    var passed = 0;
+    for (var k = 0; k < rows.length && passed < over; k++) {
+      if (!f || rows[k].text.toLowerCase().indexOf(f) > -1) { passed++; skipUntil = k + 1; }
+    }
+  }
+
   var html = [], lastSpk = null, shown = 0;
-  for (var i = 0; i < rows.length; i++) {
+  for (var i = skipUntil; i < rows.length; i++) {
     var r = rows[i];
     if (f && r.text.toLowerCase().indexOf(f) === -1) continue;
     shown++;
@@ -5610,6 +5844,22 @@ function downloadBlob(text, mime, name) {
   return true;
 }
 
+/* Neutralise Markdown structure in a value that came from speech. Decisions,
+   issues, to-dos, glossary terms and topics are auto-detected from the
+   transcript or filled from a pasted model reply, so the text is not
+   necessarily something the exporter typed — and a newline plus "#" forged a
+   heading, "|" forged a table row, and a single unmatched fence swallowed the
+   entire rest of the document in every renderer. */
+function mdSafe(v) {
+  return String(v == null ? '' : v)
+    .replace(/\r/g, '')
+    .replace(/\n+/g, ' ')                 // one item is one line
+    .replace(/```+/g, "'''")               // never leave a fence open
+    .replace(/\|/g, '\\|')                 // not a table cell
+    .replace(/^\s*([#>\-*+]|\d+\.)/, '\\$1') // not a heading, quote or list marker
+    .trim();
+}
+
 function meetingFileBase() {
   var d = new Date(MEET.startedAt || now()), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
   /* Fold accents down to their base letters BEFORE stripping non-alphanumerics,
@@ -5684,16 +5934,17 @@ function exportStretyBlock() {
   L.push('TO-DOS');
   var open = MEET.actions.filter(function (a) { return !a.done; });
   L.push(open.length ? open.map(function (a) {
-    return (a.owner || 'Unassigned') + ' \u2014 ' + a.text + (a.due ? ' (due ' + a.due + ')' : '');
+    return mdSafe(a.owner || 'Unassigned') + ' \u2014 ' + mdSafe(a.text) +
+           (a.due ? ' (due ' + mdSafe(a.due) + ')' : '');
   }).join('\n') : '(none)');
   L.push('');
   L.push('ISSUES');
   var iss = MEET.issues.filter(function (i) { return !i.done; });
-  L.push(iss.length ? iss.map(function (i) { return i.text; }).join('\n') : '(none)');
+  L.push(iss.length ? iss.map(function (i) { return mdSafe(i.text); }).join('\n') : '(none)');
   L.push('');
   L.push('HEADLINES');
   L.push(MEET.decisions.length ? MEET.decisions.map(function (d) {
-    return d.text + (d.linkedTo ? '  [led to: ' + d.linkedTo + ']' : '');
+    return mdSafe(d.text) + (d.linkedTo ? '  [led to: ' + mdSafe(d.linkedTo) + ']' : '');
   }).join('\n') : '(none)');
   var text = L.join('\n');
   copyToClipboard(text).then(function (okd) {
@@ -5712,8 +5963,8 @@ function exportMarkdown() {
   if (!exportGuard()) return;
   var started = MEET.startedAt || now();
   var L = [];
-  L.push('# ' + (CFG.meetingTitle || 'Meeting notes') + ' \u2014 ' + new Date(started).toLocaleString());
-  if (CFG.participants) { L.push(''); L.push('**Present:** ' + CFG.participants); }
+  L.push('# ' + mdSafe(CFG.meetingTitle || 'Meeting notes') + ' \u2014 ' + new Date(started).toLocaleString());
+  if (CFG.participants) { L.push(''); L.push('**Present:** ' + mdSafe(CFG.participants)); }
   if (CFG.meetingType && CFG.meetingType !== 'standard') L.push('**Type:** ' + CFG.meetingType);
   L.push('');
   L.push('_Captured with SpaceCadet v' + APP_VERSION + ' · ' + clockText(now() - started) + ' · ' +
@@ -5724,11 +5975,11 @@ function exportMarkdown() {
   }
   L.push('');
 
-  if (CFG.context && CFG.context.trim()) { L.push('## Pre-meeting context'); L.push(CFG.context.trim()); L.push(''); }
+  if (CFG.context && CFG.context.trim()) { L.push('## Pre-meeting context'); L.push(mdSafe(CFG.context)); L.push(''); }
 
   L.push('## Topic timeline');
   L.push(MEET.timeline.length
-    ? MEET.timeline.map(function (x) { return '- **' + hhmm(x.t) + '** — ' + x.topic + ' _(' + x.src + ')_'; }).join('\n')
+    ? MEET.timeline.map(function (x) { return '- **' + hhmm(x.t) + '** — ' + mdSafe(x.topic) + ' _(' + x.src + ')_'; }).join('\n')
     : '_none recorded_');
   L.push('');
 
@@ -5737,14 +5988,14 @@ function exportMarkdown() {
   L.push('## Decisions');
   L.push(MEET.decisions.length
     ? MEET.decisions.map(function (d) {
-        return '- ' + d.text + ' _(' + hhmm(d.t) + ')_' + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
+        return '- ' + mdSafe(d.text) + ' _(' + hhmm(d.t) + ')_' + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
     : '_none recorded_');
   L.push('');
 
   L.push(eosOn() ? '## Issues (IDS)' : '## Issues');
   L.push(MEET.issues.length
     ? MEET.issues.map(function (d) {
-        return '- ' + d.text + (d.segment ? ' _(' + d.segment + ')_' : '') + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
+        return '- ' + mdSafe(d.text) + (d.segment ? ' _(' + d.segment + ')_' : '') + (d.auto ? ' _(auto-detected)_' : ''); }).join('\n')
     : '_none recorded_');
   L.push('');
 
@@ -5757,13 +6008,13 @@ function exportMarkdown() {
     if (mine.length) {
       L.push('### Mine');
       L.push(mine.map(function (a) {
-        return '- [ ] ' + a.text + (a.due ? ' — due ' + a.due : '') + (a.auto ? ' _(auto-detected)_' : ''); }).join('\n'));
+        return '- [ ] ' + mdSafe(a.text) + (a.due ? ' — due ' + mdSafe(a.due) : '') + (a.auto ? ' _(auto-detected)_' : ''); }).join('\n'));
       L.push('');
     }
     if (other.length) {
       L.push('### Others');
       L.push(other.map(function (a) {
-        return '- ' + (a.owner ? '**' + a.owner + '** — ' : '') + a.text +
+        return '- ' + (a.owner ? '**' + mdSafe(a.owner) + '** — ' : '') + mdSafe(a.text) +
                (a.due ? ' — due ' + a.due : '') + (a.auto ? ' _(auto-detected)_' : ''); }).join('\n'));
     }
   } else L.push('_none recorded_');
@@ -5771,7 +6022,7 @@ function exportMarkdown() {
 
   L.push('## Glossary');
   L.push(MEET.glossary.length
-    ? MEET.glossary.map(function (g) { return '- **' + g.term + '** — ' + g.definition; }).join('\n')
+    ? MEET.glossary.map(function (g) { return '- **' + mdSafe(g.term) + '** — ' + mdSafe(g.definition); }).join('\n')
     : '_none recorded_');
   L.push('');
 
@@ -5782,9 +6033,9 @@ function exportMarkdown() {
   if (MEET.bookmarks.length) {
     L.push('## Bookmarked moments');
     L.push(MEET.bookmarks.map(function (b) {
-      return '- **' + hhmm(b.t) + '**' + (b.topic ? ' \u2014 ' + b.topic : '') +
+      return '- **' + hhmm(b.t) + '**' + (b.topic ? ' \u2014 ' + mdSafe(b.topic) : '') +
              (b.spk ? ' _(' + b.spk + ')_' : '') +
-             (b.note ? '\n  - Note: ' + b.note : '') +
+             (b.note ? '\n  - Note: ' + mdSafe(b.note) : '') +
              (b.context ? '\n  - Context: ' + b.context : '');
     }).join('\n'));
     L.push('');
@@ -5904,6 +6155,18 @@ function togglePanic() {
 
 /* A drawer moved off-screen with transform is still in the tab order: tabbing
    from the page walked into ~20 invisible controls. `inert` removes it. */
+/* The drawer covers the app but was invisible to the Tab trap, which only ever
+   looked at `.scrim` — so Tab walked out of Settings into the dashboard behind
+   it and could reach Dismiss on the very alert the user opened Settings about.
+   Making the app inert while it is open is what actually contains focus. */
+function syncAppInert() {
+  var app = $('app');
+  if (!app || !app.setAttribute) return;
+  var open = document.body.classList.contains('settingsOpen');
+  if (open === app.hasAttribute('inert')) return;         // already correct
+  if (open) app.setAttribute('inert', ''); else app.removeAttribute('inert');
+}
+
 function syncSettingsInert() {
   var el = $('settings');
   if (!el || !el.setAttribute) return;
@@ -5911,8 +6174,22 @@ function syncSettingsInert() {
   if (open === !el.hasAttribute('inert')) return;         // already correct
   if (open) el.removeAttribute('inert'); else el.setAttribute('inert', '');
 }
-function openSettings() { document.body.classList.add('settingsOpen'); syncSettingsInert(); }
-function closeSettings() { document.body.classList.remove('settingsOpen'); syncSettingsInert(); }
+var settingsOpener = null;
+function openSettings() {
+  settingsOpener = document.activeElement;
+  document.body.classList.add('settingsOpen');
+  syncSettingsInert(); syncAppInert();
+  var first = $('settings').querySelector('button, input, select, textarea');
+  if (first) { try { first.focus(); } catch (e) {} }
+}
+function closeSettings() {
+  document.body.classList.remove('settingsOpen');
+  syncSettingsInert(); syncAppInert();
+  /* Put focus back where it came from. Landing on <body> after closing a panel
+     you opened mid-meeting means starting the hunt for your place again. */
+  try { if (settingsOpener && settingsOpener.focus) settingsOpener.focus(); } catch (e) {}
+  settingsOpener = null;
+}
 
 function syncSettingsUI() {
   $('setBackend').value = CFG.backend;
@@ -6106,6 +6383,18 @@ function bindSettings() {
    handoff. Rather than rely on someone remembering to tick a box, choosing one
    of those types switches sensitive mode on itself. */
 var LOCKED_TYPES = { personnel: 1, board: 1 };
+
+/* A meeting type that forces sensitive mode must do so no matter HOW the type
+   got set — the dropdown, an imported settings file, or a restored session. */
+function enforceMeetingTypeLock() {
+  if (LOCKED_TYPES[CFG.meetingType] && !CFG.sensitive) {
+    CFG.sensitive = true;
+    saveCfg();
+    toast('This meeting type forces Sensitive on — export and every outbound path are off.', 'warn', 9000);
+    return true;
+  }
+  return false;
+}
 function applyMeetingType() {
   var t = CFG.meetingType || 'standard';
   var hint = $('meetingTypeHint');
@@ -6165,7 +6454,7 @@ function bindUI() {
   $('btnStop').addEventListener('click', stopListening);
   $('btnCatchup').addEventListener('click', catchMeUp);
   $('btnSettings').addEventListener('click', function () {
-    document.body.classList.toggle('settingsOpen'); syncSettingsInert();
+    document.body.classList.contains('settingsOpen') ? closeSettings() : openSettings();
   });
   $('btnReview').addEventListener('click', openReview);
   $('reviewTranscript').addEventListener('click', function () { hide('reviewScrim'); openTranscript(); });
@@ -6176,7 +6465,16 @@ function bindUI() {
     if (k === 'md') exportMarkdown(); else if (k === 'strety') exportStretyBlock();
   });
   $('btnTranscript').addEventListener('click', openTranscript);
-  $('tsFind').addEventListener('input', function () { renderTranscript(this.value); });
+  /* Rebuilding the whole filtered transcript synchronously per keystroke cost
+     724ms a character at four thousand rows — typing a search term locked the
+     tab for the better part of a second each time. Debounced, so a burst of
+     typing costs one render. */
+  var tsFindTimer = null;
+  $('tsFind').addEventListener('input', function () {
+    var v = this.value;
+    clearTimeout(tsFindTimer);
+    tsFindTimer = setTimeout(function () { renderTranscript(v); }, 180);
+  });
   $('transcriptScrim').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-x2]') : null;
     if (!b) return;
@@ -6280,9 +6578,8 @@ function bindUI() {
 
   /* roster */
   function promptAdd() {
-    var el = $('setRosterAdd');
-    document.body.classList.add('settingsOpen');
-    el.focus();
+    if (!document.body.classList.contains('settingsOpen')) openSettings();
+    try { $('setRosterAdd').focus(); } catch (e) {}
   }
   $('btnRosterAdd').addEventListener('click', promptAdd);
   $('btnRosterAdd2').addEventListener('click', function () {
@@ -6383,7 +6680,10 @@ function bindUI() {
     switch (e.key.toLowerCase()) {
       case 'c': e.preventDefault(); catchMeUp(); break;
       case 'l': e.preventDefault(); listening ? stopListening() : startListening(); break;
-      case 's': e.preventDefault(); document.body.classList.toggle('settingsOpen'); syncSettingsInert(); break;
+      /* Route through the real open/close so the hotkey gets the same focus move,
+         focus restore and background-inert treatment as the button does. */
+      case 's': e.preventDefault();
+        document.body.classList.contains('settingsOpen') ? closeSettings() : openSettings(); break;
       case 'd': e.preventDefault(); dismissAlert(); break;
       case 'b': e.preventDefault(); addBookmark(); break;
       case 't': e.preventDefault(); openTranscript(); break;
@@ -6393,7 +6693,13 @@ function bindUI() {
     }
   });
 
-  window.addEventListener('beforeunload', function () { doSaveMeeting(); });
+  window.addEventListener('storage', onStorageClaim);
+  claimStorage();
+
+  /* Both writes are no-ops if another copy has taken over the shared storage,
+     which is the whole point: closing a superseded window must not overwrite
+     the one the user is actually in. */
+  window.addEventListener('beforeunload', function () { doSaveMeeting(); flushCfg(); });
 }
 
 /* ===================================================================== 24. main loop */
@@ -6425,6 +6731,7 @@ function tick() {
 
 function init() {
   syncEosUI();
+  enforceMeetingTypeLock();      // a stored config must not arrive unlocked either
   syncSegmentUI();          // a refresh must restore the lit pill, not just the stamp
   syncSettingsUI();
   bindSettings();
@@ -6439,12 +6746,28 @@ function init() {
        live, bring the alert back rather than losing it. Being asked something is
        precisely the state you cannot afford to drop on a reload. */
     var rq = MEET.convo && MEET.convo.question;
-    if (rq && rq.target === 'user' && (now() - (rq.t || 0)) < CFG.alertTtlSec * 1000) {
+    if (rq && rq.target === 'user' && (now() - (rq.t || 0)) < CFG.alertTtlSec * 1000 &&
+        !wasJustDismissed(rq.text, now())) {
       VIEW.alert = {
         kind: 'direct_question', severity: 'hard', who: rq.askedBy || '',
         question: rq.text, at: rq.t || now(), points: MEET.llmTalkingPoints || [],
         src: 'claude', convo: rq, pointsAre: ''
       };
+    } else {
+      /* The promise above was only ever kept for alerts the API produced —
+         MEET.convo is written by applyLLMState and nothing else. In the default
+         free backend, where every alert comes from the local layer, a refresh
+         silently dropped the one thing the app exists to show. MEET.alerts is
+         already persisted, so the local one can come back the same way. */
+      var la = MEET.alerts[MEET.alerts.length - 1];
+      if (la && (now() - (la.t || 0)) < CFG.alertTtlSec * 1000 &&
+          !wasJustDismissed(la.question, now())) {
+        VIEW.alert = {
+          kind: la.kind || 'direct_question', severity: 'hard', who: la.who || '',
+          question: la.question || '', at: la.t || now(), points: [],
+          src: 'local', matched: '', pointsAre: ''
+        };
+      }
     }
     VIEW.topic = MEET.llmTopic || '';
     VIEW.topicSrc = MEET.llmTopic ? 'claude' : 'local';
@@ -6458,7 +6781,12 @@ function init() {
     VIEW.topicStart = (lastTop && lastTop.t) || MEET.startedAt || 0;
     recomputeLocal();
     toast('Restored the meeting in progress — ' + MEET.frags.length + ' fragments, ' +
-          clockText(now() - MEET.startedAt) + ' elapsed.', 'ok', 7000);
+          clockText(now() - MEET.startedAt) + ' elapsed.' +
+          /* The quota ladder trims the record to make it fit. It said so in the
+             saved blob and nothing ever read it back, so the earlier part of the
+             meeting just quietly was not there any more. */
+          (MEET.truncated ? ' Storage was full, so the earliest part was trimmed.' : ''),
+          MEET.truncated ? 'warn' : 'ok', MEET.truncated ? 10000 : 7000);
   }
 
   /* Ask at launch, not at the moment they press Start. Someone joining a
