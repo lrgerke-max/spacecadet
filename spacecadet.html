@@ -455,7 +455,15 @@
     border:1px solid var(--line);border-radius:var(--radius);padding:12px 13px;margin-top:10px;
     cursor:pointer;transition:border-color .12s,background .12s;
   }
+  .srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+          clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
   .choice:hover{border-color:var(--org);background:#fffaf5}
+  /* Focus rings. The setup name field is focused the moment the app opens and
+     the consent box gates recording someone, and neither showed where focus
+     was; the segment pills and transcript search had nothing either. */
+  .choice:focus-visible,#setupNames:focus-visible,#setupWho:focus-visible,
+  #consentAck:focus-visible,#tsFind:focus-visible,.segp:focus-visible{
+    outline:2px solid var(--org);outline-offset:2px;border-color:var(--org)}
   .choice .ct{font-weight:600;font-size:14px;display:flex;align-items:center;gap:7px}
   .choice .cd{font-size:12.5px;color:var(--txt-2);margin-top:4px;line-height:1.5}
   .pill{font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;letter-spacing:.02em}
@@ -869,9 +877,15 @@
 
 <!-- =============================================================== TOASTS -->
 <div id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+<!-- The alert card itself is shown and hidden with display:none, which takes it
+     out of the accessibility tree entirely — so unhiding it with its text
+     already filled in announces nothing to a screen reader. This region is
+     always mounted and only ever has its text replaced, which is the shape a
+     screen reader actually announces. It carries the alert in one sentence. -->
+<div id="srAlert" class="srOnly" role="alert" aria-live="assertive" aria-atomic="true"></div>
 
 <!-- ============================================================== MODALS -->
-<div class="scrim hidden" id="handoffScrim">
+<div class="scrim hidden" id="handoffScrim" role="dialog" aria-modal="true" aria-labelledby="handoffTitle">
   <div class="modal">
     <header>
       <h2 id="handoffTitle">Catch me up — paste into Claude</h2>
@@ -903,7 +917,7 @@
   </div>
 </div>
 
-<div class="scrim hidden" id="catchupScrim">
+<div class="scrim hidden" id="catchupScrim" role="dialog" aria-modal="true" aria-label="Catch me up">
   <div class="modal">
     <header>
       <h2>Catch me up</h2>
@@ -921,7 +935,7 @@
      Start. The name comes FIRST: it is the single input the headline feature
      cannot work without, and asking for it fifteen settings deep meant the
      alert quietly never fired for anyone who did not go looking. -->
-<div class="scrim hidden" id="firstRunScrim">
+<div class="scrim hidden" id="firstRunScrim" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
   <div class="modal">
     <header><h2 id="setupTitle">Set up SpaceCadet</h2>
       <span class="hint" id="setupStepTag" style="margin-left:auto">Step 1 of 2</span></header>
@@ -950,12 +964,12 @@
       <p style="margin-top:0">Speech has to be turned into text somewhere. This is the one decision that
         determines whether any audio leaves this laptop, so it is asked plainly. You can change it later
         in Settings.</p>
-      <div class="choice" id="chooseLocal">
+      <div class="choice" id="chooseLocal" role="button" tabindex="0">
         <div class="ct">On this device <span class="pill good">Recommended</span></div>
         <div class="cd">Audio never leaves your laptop. Needs a one-time ~40&nbsp;MB download, which some
           office networks block. Text quality is lower — good enough to follow along.</div>
       </div>
-      <div class="choice" id="chooseGoogle">
+      <div class="choice" id="chooseGoogle" role="button" tabindex="0">
         <div class="ct">Google speech service</div>
         <div class="cd">Your meeting audio is sent to <b>Google</b> to be transcribed, the same service
           phone dictation uses. Nothing to install and noticeably more accurate. Not appropriate for
@@ -971,7 +985,7 @@
   </div>
 </div>
 
-<div class="scrim hidden" id="consentScrim">
+<div class="scrim hidden" id="consentScrim" role="dialog" aria-modal="true" aria-label="Confirm before recording">
   <div class="modal">
     <header><h2>Confirm before recording</h2></header>
     <div class="body">
@@ -994,7 +1008,7 @@
   </div>
 </div>
 
-<div class="scrim hidden" id="enrollScrim">
+<div class="scrim hidden" id="enrollScrim" role="dialog" aria-modal="true" aria-labelledby="enrollTitle">
   <div class="modal" style="max-width:460px">
     <header><h2 id="enrollTitle">Learn a voice</h2></header>
     <div class="body">
@@ -1009,12 +1023,12 @@
     </div>
     <footer>
       <button class="btn primary" id="enrollDone">Save voice</button>
-      <button class="btn" data-close="enrollScrim">Cancel</button>
+      <button class="btn" id="enrollCancel">Cancel</button>
     </footer>
   </div>
 </div>
 
-<div class="scrim hidden" id="reviewScrim">
+<div class="scrim hidden" id="reviewScrim" role="dialog" aria-modal="true" aria-label="Meeting snapshot">
   <div class="modal" style="width:min(700px,100%)">
     <header><h2>Meeting snapshot</h2>
       <button class="x" aria-label="Close" data-close="reviewScrim">&times;</button></header>
@@ -1028,7 +1042,7 @@
   </div>
 </div>
 
-<div class="scrim hidden" id="transcriptScrim">
+<div class="scrim hidden" id="transcriptScrim" role="dialog" aria-modal="true" aria-label="Full transcript">
   <div class="modal" style="width:min(760px,100%)">
     <header><h2>Full transcript</h2>
       <span id="tsMeta" class="hint" style="margin-left:8px"></span>
@@ -1045,7 +1059,7 @@
   </div>
 </div>
 
-<div class="scrim hidden" id="audioHelpScrim">
+<div class="scrim hidden" id="audioHelpScrim" role="dialog" aria-modal="true" aria-label="Audio source help">
   <div class="modal" style="max-width:480px">
     <header><h2>Capturing the other people on the call</h2>
       <button class="x" aria-label="Close" data-close="audioHelpScrim">&times;</button></header>
@@ -1066,7 +1080,7 @@
   </div>
 </div>
 
-<div class="scrim hidden" id="confirmScrim">
+<div class="scrim hidden" id="confirmScrim" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
   <div class="modal" style="max-width:440px">
     <header><h2 id="confirmTitle">Are you sure?</h2></header>
     <div class="body"><p id="confirmBody" style="margin:0"></p></div>
@@ -1620,8 +1634,13 @@ var QUESTION_PATTERNS = [
   { re: /\bover to you\b/i,                        label: 'over to you' },
   { re: /\bhow about you\b/i,                      label: 'how about you' },
   { re: /\bwhat about you\b/i,                     label: 'what about you' },
-  { re: /\bcan you (take|walk|give|share|cover|speak|talk|do|pick|update|run)\b/i, label: 'can you …' },
-  { re: /\bcould you (take|walk|give|share|cover|speak|talk|do|pick|update|run)\b/i, label: 'could you …' },
+  /* The verb list is what decides whether a request is heard at all, and ten
+     verbs missed most of how people actually ask: "can you pull those numbers",
+     "can you look at this", "can you follow up with them". Widened to ordinary
+     meeting verbs — a request aimed at somebody else is still filtered out by
+     the targeting check, so recall costs less here than a silent miss. */
+  { re: /\bcan you (take|walk|give|share|cover|speak|talk|do|pick|update|run|pull|look|check|review|send|draft|handle|own|follow|bring|put|set|start|help|confirm|circle|write)\b/i, label: 'can you …' },
+  { re: /\bcould you (take|walk|give|share|cover|speak|talk|do|pick|update|run|pull|look|check|review|send|draft|handle|own|follow|bring|put|set|start|help|confirm|circle|write)\b/i, label: 'could you …' },
   { re: /\bwould you (mind|be able)\b/i,           label: 'would you …' },
   { re: /\bdo you (have|want|know|see|agree)\b/i,  label: 'do you …' },
   { re: /\byour (take|view|thoughts|read|opinion)\b/i, label: 'your take' },
@@ -1985,7 +2004,19 @@ function resetMeeting() {
      whoever happened to be talking when last week's meeting ended — and that
      name is what ends up owning a to-do in the export. An unattributed line is
      honest; a confidently wrong one is not. */
-  currentSpeaker = ''; fragGuess = false;
+  /* EVERY piece of per-meeting state that lives outside MEET. This list is the
+     one that keeps growing: the agenda segment, then the current speaker, then
+     these. Anything added here in future that describes THIS meeting but is not
+     stored in MEET has to be cleared here too, or it silently becomes part of
+     the next meeting. */
+  currentSpeaker = ''; fragGuess = false; speakerFromVoice = false;
+  speakerLockedAt = 0;           // a manual pick from last week must not gag the matcher now
+  lastNameHitAt = 0;             // "your name was said recently" cannot span meetings
+  lastOtherHitAt = 0;
+  recentAlertKeys = {};          // or a real new alert is swallowed as a duplicate
+  dismissedQuestions = [];
+  lastTopicEval = 0;
+  awayAt = 0; awayTimelineLen = 0; awayAlertsLen = 0;   // the away digest indexes into the OLD arrays
   renderRoster();
   reindexItems();
   meetingCounts = { uni: Object.create(null), total: 0 };
@@ -1995,6 +2026,9 @@ function resetMeeting() {
   }
   VIEW.topic = ''; VIEW.topicSrc = 'local'; VIEW.topicAt = 0; VIEW.bullets = [];
   VIEW.chips = []; VIEW.alert = null; VIEW.lastTopicVec = null; VIEW.lastChangeAt = 0;
+  /* The IDS clock reads "on this issue for N minutes" off this. Left set, the
+     first issue of a new Level 10 opened with a timer counting from last week. */
+  VIEW.topicStart = 0; VIEW.bulletsAt = 0;
   try { localStorage.removeItem(MEETING_KEY); } catch (e) {}
 }
 
@@ -2273,18 +2307,69 @@ var lastOtherHitAt = 0;
 /* Does a roster name that is NOT the user appear close before the question?
    Vocatives sit at the start of the clause ("Sarah, can you..."), so proximity
    before the match is the signal, not mere presence anywhere in the fragment. */
-function otherPersonAddressed(text, qIdx) {
+/* A name in VOCATIVE position — "Sarah, can you…" or "…can you, Sarah?" — is
+   being addressed. The same name as a sentence subject — "what Sarah raised
+   earlier" — is only being mentioned. Telling those apart is the whole job. */
+function vocativePattern(alts) {
+  var n = '(?:' + alts.join('|') + ')';
+  return new RegExp('(^|[,;:.!?]\\s*)' + n + '\\s*[,?!.:]|,\\s*' + n + '\\s*[?!.]?\\s*$', 'i');
+}
+function myNameAlternatives() {
+  return String(CFG.names || '').split(',')
+    .map(function (x) { return x.trim().slice(0, 40); })
+    .filter(function (x) { return x.length >= 2; })
+    .slice(0, 50).map(nameAlternative);
+}
+
+function otherPersonAddressed(text, qIdx, qLen) {
   if (!CFG.roster || !CFG.roster.length) return null;
   var mine = buildNameRegex();
-  var window = text.slice(Math.max(0, qIdx - 60), qIdx + 10);
+  /* Look before the question AND across it. English puts a vocative at either
+     end — "Sarah, can you take this?" but equally "Can you take this, Sarah?"
+     — and the window used to stop ten characters past the match START, so every
+     trailing vocative was invisible and the question was read as aimed at the
+     user. That is the cry-wolf case this function exists to prevent. */
+  var win = text.slice(Math.max(0, qIdx - 60), qIdx + (qLen || 0) + 40);
+  var myAlts = myNameAlternatives();
+  var meAddressed = myAlts.length ? vocativePattern(myAlts).test(win) : false;
   for (var i = 0; i < CFG.roster.length; i++) {
     var nm = String(CFG.roster[i].name || '').trim();
     if (nm.length < 2) continue;
     if (mine && mine.test(nm)) continue;                 // that roster entry IS the user
-    var re = new RegExp(nameAlternative(nm), 'i');       // same boundary rule as the user's own name
-    if (re.test(window) && !(mine && mine.test(window))) return CFG.roster[i].name;
+    /* Vocative POSITION, not mere presence. "Sarah, can you…" and "…can you,
+       Sarah?" address her; "what Sarah raised earlier, can you look at it?"
+       only mentions her, and treating that as addressed silently swallowed a
+       question that really was aimed at the user. */
+    /* Deferring to the user whenever their name appears ANYWHERE in the window
+       handed them every question that merely mentioned them: "As Laura noted
+       last week, Sarah, can you take those numbers?" was read as Laura's. The
+       tie-break is position, not presence — the user wins only if THEY are the
+       one being addressed. */
+    if (vocativePattern([nameAlternative(nm)]).test(win) && !meAddressed) return CFG.roster[i].name;
   }
   return null;
+}
+
+/* Is the person now speaking the user themselves? Only knowable once a speaker
+   has been tagged, but that is the common case in a meeting where someone is
+   using the number keys. */
+function userIsSpeaking() {
+  if (!currentSpeaker) return false;
+  var mine = buildNameRegex();
+  if (!mine) return false;
+  var nm = speakerName(currentSpeaker);
+  return !!nm && mine.test(nm);
+}
+
+/* Unambiguous self-reference: someone saying their OWN name. The demo case is
+   an executive director opening the meeting with "this is Laura, let's start" —
+   which used to fire a hard YOUR NAME WAS SAID alert at the person who just
+   said it, inside the first thirty seconds. */
+var SELF_INTRO = /\b(?:this is|it'?s|i'?m|i am|my name(?:'?s| is)|here'?s)\s*$|\b(?:here|speaking)\b/i;
+function isSelfReference(text, nameIdx, nameStr) {
+  var before = text.slice(Math.max(0, nameIdx - 24), nameIdx);
+  var after = text.slice(nameIdx + nameStr.length, nameIdx + nameStr.length + 12);
+  return SELF_INTRO.test(before) || /^\s*(?:here|speaking)\b/i.test(after);
 }
 var recentAlertKeys = {};      // key -> t, so one utterance cannot fire ten times
 
@@ -2303,8 +2388,24 @@ function scanFragment(text, t) {
 
   /* Precision ladder. A false alarm costs more trust than a miss, so the loud
      alert needs a name; a bare question pattern gets the quieter amber one. */
+  /* YOUR OWN VOICE IS NOT AN ALERT. Nothing here used to consult who was
+     talking, so the operator saying their own name — introducing the meeting,
+     or "Laura here, can everyone hear me?" — raised a hard alert at the person
+     who had just spoken. Suppressed two ways: when a tagged speaker resolves to
+     the user, and when the sentence is an unmistakable self-introduction. */
+  if (userIsSpeaking() ||
+      (nameHit && isSelfReference(text, nameHit.index, nameHit[0]))) {
+    lastNameHitAt = 0;                    // and it must not prime the 12s follow-on window either
+    return;                               // your own question is not a question for you
+  }
+
   var kind, severity, matchIdx, matchStr, label;
   if (nameHit && qHit) {
+    /* Targeting runs here too. It used to live only in the question-only branch,
+       so "As Laura noted last week, Sarah, can you take the lead?" alerted
+       Laura — her name appearing anywhere was enough to claim the question. */
+    var other2 = otherPersonAddressed(text, qHit.m.index, qHit.m[0].length);
+    if (other2) { lastOtherHitAt = t; return; }
     kind = 'direct_question'; severity = 'hard';
     matchIdx = Math.min(nameHit.index, qHit.m.index);
     matchStr = nameHit[0]; label = nameHit[0] + ' + "' + qHit.label + '"';
@@ -2318,7 +2419,7 @@ function scanFragment(text, t) {
        Without this, "Sarah, can you take that?" fired the same alarm as
        "Luke, can you take that?" — and an alarm that cries wolf gets ignored,
        which costs more than the miss. */
-    var other = otherPersonAddressed(text, qHit.m.index);
+    var other = otherPersonAddressed(text, qHit.m.index, qHit.m[0].length);
     if (other) { lastOtherHitAt = t; return; }
 
     /* A question pattern within 12s of your name being said is almost certainly
@@ -2347,14 +2448,23 @@ function scanFragment(text, t) {
     }
     return;
   }
+  var question = extractQuestion(text, matchIdx);
+  if (wasJustDismissed(question, t)) return;      // they already waved this one away
+
   recentAlertKeys[key] = t;
-  if (Object.keys(recentAlertKeys).length > 60) recentAlertKeys = {};
+  /* Prune the oldest rather than wiping the table: clearing it wholesale dropped
+     keys that were seconds old and let a just-seen alert fire again. */
+  var ks = Object.keys(recentAlertKeys);
+  if (ks.length > 60) {
+    ks.sort(function (a, b) { return recentAlertKeys[a] - recentAlertKeys[b]; });
+    for (var d = 0; d < 20; d++) delete recentAlertKeys[ks[d]];
+  }
 
   fireAlert({
     kind: kind,
     severity: severity,
     who: speakerName(currentSpeaker),           // real name when a speaker is selected
-    question: extractQuestion(text, matchIdx),
+    question: question,
     at: t,
     points: [],
     src: 'local',
@@ -2435,9 +2545,39 @@ function fireAlert(a) {
   renderSoon();
 }
 
+/* Dismissing must actually stick. The dedupe key is anchored to the match's
+   offset in the fragment, and streaming recognisers revise words BEFORE the
+   match as often as after it ("can you…" becoming "sorry, can you…"), which
+   shifted the offset, produced a fresh key, missed the dedupe table and
+   re-raised the alert the user had just waved away — restamped as new. */
+var dismissedQuestions = [];
+function qTokens(s) { return normKey(s || '').split(/\s+/).filter(Boolean); }
+
 function dismissAlert() {
+  if (VIEW.alert && VIEW.alert.question) {
+    dismissedQuestions.push({ t: now(), toks: qTokens(VIEW.alert.question) });
+    if (dismissedQuestions.length > 20) dismissedQuestions.shift();
+  }
   VIEW.alert = null;
   renderSoon();
+}
+
+/* Compare on word overlap rather than an exact string. A streaming recogniser
+   revises what it already emitted — "can you take…" becomes "sorry, can you
+   take… for us" — which changes both the text and the match offset the dedupe
+   key was anchored to, so the alert the user had just waved away came straight
+   back, restamped as new. */
+function wasJustDismissed(question, t) {
+  var toks = qTokens(question);
+  if (!toks.length) return false;
+  for (var i = dismissedQuestions.length - 1; i >= 0; i--) {
+    var d = dismissedQuestions[i];
+    if (t - d.t > 60000) continue;
+    var shared = 0;
+    for (var j = 0; j < toks.length; j++) if (d.toks.indexOf(toks[j]) > -1) shared++;
+    if (shared / Math.max(toks.length, d.toks.length) >= 0.7) return true;
+  }
+  return false;
 }
 
 /* Soft two-tone chime, built with WebAudio so the file stays self-contained. */
@@ -2531,15 +2671,20 @@ function profileConfidence(r) {
 
 function rosterRemove(id) {
   CFG.roster = CFG.roster.filter(function (r) { return r.id !== id; });
-  if (currentSpeaker === id) currentSpeaker = '';
+  if (currentSpeaker === id) { currentSpeaker = ''; speakerFromVoice = false; }
   saveCfg(); renderRoster(); renderSoon();
 }
 function setSpeaker(id, fromVoice) {
   currentSpeaker = (currentSpeaker === id && !fromVoice) ? '' : id;
-  if (!fromVoice) speakerLockedAt = now();   // a manual pick beats voice matching for a while
+  if (!fromVoice) speakerLockedAt = now();
+  /* Remember HOW the current speaker was chosen. Settings promises a guess
+     "never overwrites a name you picked yourself", and a 20-second timer made
+     that true for twenty seconds and false for the rest of the meeting. */
+  speakerFromVoice = !!fromVoice && !!currentSpeaker;
   renderRoster(); renderSoon();
 }
 var speakerLockedAt = 0;
+var speakerFromVoice = false;   // false = the operator chose this name by hand
 
 /* Stable colour per roster position so the same person reads the same way. */
 var SPK_COLORS = ['#2563eb','#c2410c','#047857','#6d28d9','#b91c1c','#0891b2',
@@ -3516,7 +3661,16 @@ function onFragment(f) {
     /* Voice matching may propose a speaker, but only when you have not just
        chosen one by hand. Anything it decides is marked as a guess. */
     var guess = VoiceID.attribute();
-    if (guess && guess !== currentSpeaker) { currentSpeaker = guess; fragGuess = true; renderRoster(); }
+    /* A guess may fill an empty slot or replace an earlier guess — it must never
+       override a name chosen by hand. Tap the name again to hand control back. */
+    if (guess && guess !== currentSpeaker && (!currentSpeaker || speakerFromVoice)) {
+      currentSpeaker = guess; speakerFromVoice = true; renderRoster();
+    }
+    /* Mark EVERY voice-attributed fragment, not just the one where the guess
+       changed. Marking only the change meant the second and later lines of the
+       same guessed speaker rendered without the "?" and were indistinguishable
+       from a name the operator had actually confirmed. */
+    fragGuess = speakerFromVoice;
     addFragment(text, f.t || now());
     localExtract(text);        // free capture, no backend required
   } else {
@@ -3951,6 +4105,11 @@ async function ambientTick() {
   if (words < 15) { VIEW.api.state = 'idle'; VIEW.api.msg = 'waiting for speech'; renderSoon(); return; }
 
   apiInFlight = true;
+  /* Which meeting this call belongs to. A summary is seconds in flight, and
+     pressing New meeting in that window used to write the previous meeting's
+     topic, decisions and to-dos into the fresh one — the same class of leak as
+     the segment and the speaker, arriving by race rather than by omission. */
+  var forMeeting = MEET.startedAt;
   lastApiAt = now();
   VIEW.api.state = 'calling'; VIEW.api.msg = ''; renderSoon();
 
@@ -3972,6 +4131,13 @@ async function ambientTick() {
       /* Be forgiving: pull the first balanced-looking object out of the text. */
       var m = out.text && out.text.match(/\{[\s\S]*\}/);
       if (m) { try { parsed = JSON.parse(m[0]); } catch (e2) { parsed = null; } }
+    }
+
+    if (MEET.startedAt !== forMeeting) {
+      /* A new meeting started while this was in flight. The answer describes a
+         meeting that is over; dropping it is the only correct thing to do. */
+      VIEW.api.state = 'idle'; VIEW.api.msg = '';
+      return;
     }
 
     if (parsed) {
@@ -4255,6 +4421,7 @@ async function catchMeUp() {
     'TRANSCRIPT:\n' + t.text;
 
   catchUpInFlight = true;
+  var catchUpFor = MEET.startedAt;      // same reason as the ambient loop above
   try {
     var out = await callAnthropic(buildSystemPrompt(CFG.profile, CFG.context), user, {
       maxTokens: 1600,
@@ -4264,7 +4431,7 @@ async function catchMeUp() {
     $('catchupBody').innerHTML = miniMarkdown(out.text || '(empty response)');
     $('catchupMeta').textContent = CFG.model + ' · ' + out.latency + 'ms · $' + MEET.cost.usd.toFixed(4) + ' session total';
     var parsed = parsePastedReply(out.text);
-    if (parsed) applyLLMState(parsed, 'claude');
+    if (parsed && MEET.startedAt === catchUpFor) applyLLMState(parsed, 'claude');
   } catch (e) {
     $('catchupBody').innerHTML = '<p class="warn red" style="margin:0">Catch-up call failed: ' +
       esc(e && e.message ? e.message : 'unknown error') + '</p>' +
@@ -4534,12 +4701,20 @@ function renderIssue() {
   $('issueText').textContent = c.issueText;
 }
 
+/* What the live region last said, so a re-render every 500ms does not re-announce
+   the same alert over and over — only a genuinely new one speaks. */
+var srSaid = '';
+
 function renderAlert() {
   var z = $('alertZone');
   var a = VIEW.alert;
 
   if (a && (now() - a.at) > CFG.alertTtlSec * 1000) { VIEW.alert = null; a = null; }
-  if (!a) { z.classList.add('hidden'); return; }
+  if (!a) {
+    z.classList.add('hidden');
+    if (srSaid) { $('srAlert').textContent = ''; srSaid = ''; }
+    return;
+  }
 
   z.classList.remove('hidden');
   z.classList.toggle('soft', a.severity !== 'hard');
@@ -4553,6 +4728,12 @@ function renderAlert() {
   $('alertAgo').textContent = agoText(a.at);
 
   var q = a.question || '(nothing captured)';
+
+  /* One sentence, spoken once. Written into the always-mounted region rather
+     than the card, because the card is display:none until the moment it already
+     has its text — which announces nothing. */
+  var spoken = title.charAt(0) + title.slice(1).toLowerCase() + '. ' + q;
+  if (spoken !== srSaid) { srSaid = spoken; $('srAlert').textContent = spoken; }
   $('alertQ').innerHTML = highlightNames(q);
 
   var ul = $('alertPoints');
@@ -5053,14 +5234,28 @@ function importSettings(text) {
    otherwise would be worse than not having it. What IS possible is reading a
    .ics invite the user already has — entirely on this machine, nothing uploaded. */
 function parseIcs(text) {
-  var t = String(text || '').replace(/\r\n[ \t]/g, '');   // unfold RFC5545 wrapping
+  /* Unfold RFC 5545 continuation lines. The spec writes CRLF, but an .ics that
+     has been through a mail client, a zip, or a text editor often arrives with
+     bare LF — and leaving those folded truncated every long SUMMARY at the fold.
+     That truncated string then became the meeting title AND the export filename,
+     so a real invite produced notes named after half its own name. */
+  var t = String(text || '').replace(/\r?\n[ \t]/g, '');
   function field(name) {
     var m = t.match(new RegExp('^' + name + '[^:\\r\\n]*:(.*)$', 'mi'));
     return m ? m[1].trim() : '';
   }
   function icsDate(v) {
-    var m = String(v).match(/(\d{4})(\d{2})(\d{2})T?(\d{2})?(\d{2})?/);
-    return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)) : null;
+    var raw = String(v);
+    var m = raw.match(/(\d{4})(\d{2})(\d{2})T?(\d{2})?(\d{2})?(\d{2})?/);
+    if (!m) return null;
+    var y = +m[1], mo = +m[2] - 1, d = +m[3], h = +(m[4] || 0), mi = +(m[5] || 0), se = +(m[6] || 0);
+    /* A trailing Z means UTC, and UTC is what Outlook and Google both write.
+       Feeding those digits to the local-time constructor read 14:00Z as 2pm
+       local, so the invite you just loaded was confirmed back at the wrong
+       hour by your whole offset from UTC. A TZID or floating time has no Z and
+       is genuinely local, so it still goes through the local constructor. */
+    if (/Z\s*$/.test(raw)) return new Date(Date.UTC(y, mo, d, h, mi, se));
+    return new Date(y, mo, d, h, mi, se);
   }
   var names = [], re = /^ATTENDEE[^:\r\n]*?CN=([^;:\r\n]+)/gmi, mm;
   while ((mm = re.exec(t))) {
@@ -5231,8 +5426,16 @@ function downloadBlob(text, mime, name) {
 
 function meetingFileBase() {
   var d = new Date(MEET.startedAt || now()), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
-  var slug = (CFG.meetingTitle || 'spacecadet').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-             .replace(/^-|-$/g, '').slice(0, 40) || 'spacecadet';
+  /* Fold accents down to their base letters BEFORE stripping non-alphanumerics,
+     or "Ünïcödé Nämes" exports as "n-c-d-n-mes". This app is built for a YMCA
+     running an international staff programme; accented names in a meeting title
+     are ordinary here, not exotic. */
+  var raw = String(CFG.meetingTitle || 'spacecadet');
+  try { raw = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  /* Trim separators AFTER the length cut, not before: slicing to 40 could land
+     on a dash and leave "summer-camp--2026-08-21". */
+  var slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+             .slice(0, 40).replace(/^-+|-+$/g, '') || 'spacecadet';
   return slug + '-' + d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) +
          '-' + p2(d.getHours()) + p2(d.getMinutes());
 }
@@ -5497,6 +5700,11 @@ function togglePanic() {
     document.title = 'Document1';
   } else {
     document.title = titleBefore;
+    /* Esc blanks from anywhere, including over the setup modal — that is the
+       promise and it stays. But the sweep that dismisses every scrim used to
+       leave a first-time user in the app with setup never completed and no
+       visible way back, so the name alert simply never worked for them. */
+    if (!CFG.firstRunDone) showFirstRun();
     if (panicStoppedCapture) {
       panicStoppedCapture = false;
       toast('Capture stopped when you hid the window. Press L to start again.', 'warn', 7000);
@@ -5821,8 +6029,20 @@ function bindUI() {
   });
 
   /* first-run engine choice */
-  $('chooseLocal').addEventListener('click', function () { chooseEngine('local'); });
-  $('chooseGoogle').addEventListener('click', function () { chooseEngine('google'); });
+  /* These two cards ARE the second setup step, and as bare divs they had no
+     tabindex, no role and no key handler — so a keyboard-only user reached the
+     modal that opens at launch, found Back as the only focusable control, and
+     could not finish onboarding at all. */
+  ['chooseLocal', 'chooseGoogle'].forEach(function (id) {
+    var which = id === 'chooseLocal' ? 'local' : 'google';
+    var el = $(id);
+    el.addEventListener('click', function () { chooseEngine(which); });
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault(); chooseEngine(which);
+      }
+    });
+  });
   $('setupNext').addEventListener('click', setupContinue);
   $('setupBack').addEventListener('click', function () { setSetupStep(1); });
   $('setupNames').addEventListener('keydown', function (e) {
@@ -5887,6 +6107,12 @@ function bindUI() {
     if (e.key === 'Enter') { e.preventDefault(); if (rosterAdd(this.value)) { this.value = ''; syncSettingsUI(); } }
   });
   $('enrollDone').addEventListener('click', function () { closeEnroll(true); });
+  /* Cancel used to be a generic [data-close], which only hides the box. That
+     left the 200ms poll running AND left VoiceID mid-enrolment, so every audio
+     frame afterwards was diverted into the uncapped enrolment buffer instead of
+     the analysis one: voice matching silently stopped working for the rest of
+     the meeting and memory grew without bound, with nothing on screen to say so. */
+  $('enrollCancel').addEventListener('click', function () { closeEnroll(false); });
   $('enrollScrim').addEventListener('click', function (e) { if (e.target === this) closeEnroll(false); });
 
   $('alertDismiss').addEventListener('click', dismissAlert);
@@ -5929,7 +6155,17 @@ function bindUI() {
       return !n.classList.contains('hidden');
     }).pop();
     if (!open) return;
-    var f = open.querySelectorAll('button, input, textarea, select, [href]');
+    /* Two things this list has to get right, and it got neither. It missed
+       anything focusable via tabindex — which is how the two engine-choice cards
+       are reachable — and it included controls that are currently hidden, so on
+       setup step 2 "first" was an invisible step-1 input: Tab tried to focus
+       something with no box, focus fell to the body, and the trap put it back
+       again. Tab simply did nothing, in the modal that opens at launch. */
+    var f = Array.prototype.filter.call(
+      open.querySelectorAll('button, input, textarea, select, a[href], [tabindex]:not([tabindex="-1"])'),
+      function (n) {
+        return !n.disabled && !!(n.offsetWidth || n.offsetHeight || n.getClientRects().length);
+      });
     if (!f.length) return;
     var first = f[0], last = f[f.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -6024,6 +6260,11 @@ function init() {
     VIEW.topicAt = MEET.llmAt || now();
     VIEW.bullets = MEET.llmBullets || [];
     VIEW.bulletsAt = MEET.llmAt || 0;
+    /* VIEW is rebuilt from scratch on load, so the IDS clock lost its origin and
+       silently vanished after a refresh rather than showing a wrong number.
+       Seed it from the last topic actually recorded. */
+    var lastTop = MEET.timeline[MEET.timeline.length - 1];
+    VIEW.topicStart = (lastTop && lastTop.t) || MEET.startedAt || 0;
     recomputeLocal();
     toast('Restored the meeting in progress — ' + MEET.frags.length + ' fragments, ' +
           clockText(now() - MEET.startedAt) + ' elapsed.', 'ok', 7000);
