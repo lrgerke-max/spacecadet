@@ -2236,8 +2236,12 @@ function evaluateTopicChange() {
   if (t - lastTopicEval < 15000) return;         // slide the evaluation, don't block on 60s edges
   lastTopicEval = t;
 
-  var cur  = termVector(fragsBetween(t - 60000, t));
-  var prev = termVector(fragsBetween(t - 120000, t - 60000));
+  /* Anchored to the newest fragment for the same reason as renderTail() above:
+     a backward clock jump otherwise turns both of these into full-array scans. */
+  var newestT = MEET.frags.length ? MEET.frags[MEET.frags.length - 1].t : t;
+  var base = Math.max(t, newestT);
+  var cur  = termVector(fragsBetween(base - 60000, base));
+  var prev = termVector(fragsBetween(base - 120000, base - 60000));
   if (cur.n < 25 || prev.n < 25) return;         // not enough speech to judge
 
   var sim = cosine(cur.v, prev.v);
@@ -4896,12 +4900,24 @@ function renderBullets() {
 function renderTail() {
   var box = $('tail');
   $('tailSecs').textContent = TAIL_SEC;
-  var cut = now() - TAIL_SEC * 1000;
-  var recent = [], allf = MEET.frags;
+  /* Anchor to the newest fragment, exactly as windowFrags() does and for exactly
+     the same reason. This copy of the loop never got that fix, so a laptop
+     resuming from sleep — or any backward NTP correction — made every fragment
+     look like the future, and this panel stopped showing the last thirty
+     seconds and started re-stringifying the ENTIRE transcript into innerHTML
+     twice a second. Measured at 4000 fragments: 13ms a render became 228ms,
+     and the panel's HTML went from 1.7KB to 834KB, for the rest of the meeting. */
+  var allf = MEET.frags;
+  var newest = allf.length ? allf[allf.length - 1].t : now();
+  var cut = Math.max(now(), newest) - TAIL_SEC * 1000;
+  var recent = [];
+  /* push+reverse, not unshift: unshifting in a loop is quadratic, which is what
+     turned the degraded case from slow into a visible freeze. */
   for (var ri = allf.length - 1; ri >= 0; ri--) {
     if (allf[ri].t < cut) break;
-    recent.unshift(allf[ri]);
+    recent.push(allf[ri]);
   }
+  recent.reverse();
 
   /* Keep something on screen during a pause rather than blanking the most
      valuable panel in the app. */
@@ -5374,7 +5390,14 @@ function highlightFind(text, f) {
   var out = esc(text), needle = esc(f);
   if (!needle) return out;
   var re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-  return out.replace(re, function (m) { return '<mark>' + m + '</mark>'; });
+  /* Skip over entities, the same way highlightNames() does — searching the
+     transcript for "amp" or "quot" otherwise split an unrelated &amp; in the
+     rendered text. Not an injection (both sides are escaped first), but it
+     misrepresents what was actually said, which is the panel's whole job. */
+  return out.replace(/&[a-z#0-9]+;|[^&]+/gi, function (tok) {
+    return tok.charAt(0) === '&' ? tok
+      : tok.replace(re, function (m) { return '<mark>' + m + '</mark>'; });
+  });
 }
 function openTranscript() {
   $('tsFind').value = '';
