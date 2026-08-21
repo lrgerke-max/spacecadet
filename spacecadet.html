@@ -2367,11 +2367,20 @@ function userIsSpeaking() {
      and recoverable; a silent blackout is neither. */
   var nm = normKey(speakerName(currentSpeaker) || '');
   if (!nm) return false;
-  var mine = String(CFG.names || '').split(',');
-  for (var i = 0; i < mine.length; i++) {
-    if (normKey(mine[i]) === nm) return true;
+  var mine = String(CFG.names || '').split(',').map(normKey).filter(Boolean);
+  if (mine.indexOf(nm) === -1) return false;
+
+  /* And it has to be UNAMBIGUOUS. Someone who lists "Lee" as an alias for
+     themselves, on a roster that also holds a colleague called Lee, cannot be
+     told apart from him — and claiming to know silently switched off every
+     alert while he was talking. When more than one roster entry answers to one
+     of these names, admit we do not know: showing an alert we could have
+     suppressed is recoverable, missing one is not. */
+  var hits = 0;
+  for (var i = 0; i < CFG.roster.length; i++) {
+    if (mine.indexOf(normKey(CFG.roster[i].name || '')) > -1) hits++;
   }
-  return false;
+  return hits === 1;
 }
 
 /* Unambiguous self-reference: someone saying their OWN name. The demo case is
@@ -2575,10 +2584,12 @@ var dismissedQuestions = [];
    count, so dismissing one muted the other — a different ask, on a different
    topic, silently swallowed. */
 var QFILLER = {};
-('can could you the a an on of for in to do does is are we i it that this and or ' +
- 'take walk give share cover speak talk pick update run pull look check send ' +
- 'draft handle own follow bring put set start help confirm circle write please just ' +
- 'lead about with from what any thoughts your us me my our ' +
+/* The request verbs — take, send, check, pull, look, draft… — are deliberately
+   NOT filler. They are exactly what tells "can you SEND the budget numbers"
+   apart from "can you CHECK the budget numbers": two different asks about the
+   same object. Stripping them made dismissing one silently mute the other. */
+('can could you the a an on of for in to does is are we i it that this and or ' +
+ 'please just about with from what any your us me my our ' +
  /* interjections a recogniser adds or drops between passes at the same sentence */
  'sorry okay ok so well um uh erm actually right yeah yep hey hi thanks quick real ' +
  'sure maybe also then now here there back over out up').split(' ')
@@ -2586,8 +2597,12 @@ var QFILLER = {};
 
 function qTokens(s) {
   var all = normKey(s || '').split(/\s+/).filter(Boolean);
-  var content = all.filter(function (w) { return !QFILLER[w] && w.length > 2; });
-  return content.length ? content : all;      // fall back if a question is all boilerplate
+  /* No fallback to the unfiltered list. "Can you look at this now?" and "Can you
+     look at that now?" share five of six scaffolding words, so comparing those
+     suppressed a question about a different thing entirely. With no content
+     words there is no signal, and the honest answer is "cannot tell" — which
+     must mean SHOW it, since a missed alert is the invisible failure. */
+  return all.filter(function (w) { return !QFILLER[w] && w.length > 2; });
 }
 
 function dismissAlert() {
@@ -2606,13 +2621,28 @@ function dismissAlert() {
    back, restamped as new. */
 function wasJustDismissed(question, t) {
   var toks = qTokens(question);
-  if (!toks.length) return false;
+  /* Below three content words there is no signal — "can you look at this now"
+     and "...at that now" reduce to the same two words while plausibly pointing
+     at different things. Cannot tell means show it. */
+  if (toks.length < 3) return false;
+
   for (var i = dismissedQuestions.length - 1; i >= 0; i--) {
     var d = dismissedQuestions[i];
-    if (t - d.t > 60000) continue;
-    var shared = 0;
-    for (var j = 0; j < toks.length; j++) if (d.toks.indexOf(toks[j]) > -1) shared++;
-    if (shared / Math.max(toks.length, d.toks.length) >= 0.7) return true;
+    if (t - d.t > 60000 || d.toks.length < 3) continue;
+
+    /* Containment, not a ratio. A ratio of shared-over-largest called
+       "can you SEND the budget numbers to finance" and "can you CHECK the
+       budget numbers with finance" the same question at 0.8 — four of five
+       words match and the one that differs is the entire point. A recogniser
+       rewording the same sentence adds or drops a word or two; it does not
+       swap the verb. So the smaller set must sit wholly inside the larger,
+       and the two must be within two words of each other. */
+    var small = toks.length <= d.toks.length ? toks : d.toks;
+    var large = small === toks ? d.toks : toks;
+    if (large.length - small.length > 2) continue;
+    var missing = 0;
+    for (var j = 0; j < small.length; j++) if (large.indexOf(small[j]) === -1) missing++;
+    if (missing === 0) return true;
   }
   return false;
 }
@@ -4138,7 +4168,11 @@ async function ambientTick() {
   if (now() < VIEW.api.nextRetryAt) return;
   if (now() - lastApiAt < CFG.intervalSec * 1000) return;
 
-  var since = MEET.lastSentT || (now() - windowMs());
+  /* Anchored like the other two windows: after a backward clock jump a raw
+     now() reaches further back, so the first call after a resume would send
+     more of the meeting than intended — billed, on the one path that spends. */
+  var newestF = MEET.frags.length ? MEET.frags[MEET.frags.length - 1].t : now();
+  var since = MEET.lastSentT || (Math.max(now(), newestF) - windowMs());
   var fresh = fragsSince(since);
   var words = fresh.reduce(function (n, f) { return n + wordCount(f.text); }, 0);
 
@@ -5302,7 +5336,13 @@ function parseIcs(text) {
      a file holding several events from pooling everyone's attendees into one
      roster. */
   var ev1 = whole.match(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/i);
-  var t = ev1 ? ev1[1] : whole;
+  /* A truncated paste has BEGIN:VEVENT and no END, and falling back to the whole
+     file put the VTIMEZONE's 16010101 back in scope — the exact bug this scoping
+     exists to prevent, reopened by malformed input. Take everything after the
+     BEGIN instead, and failing that strip the timezone blocks explicitly. */
+  var t = ev1 ? ev1[1]
+        : (whole.split(/BEGIN:VEVENT/i)[1] ||
+           whole.replace(/BEGIN:VTIMEZONE[\s\S]*?END:VTIMEZONE/gi, ''));
 
   /* RFC 5545 escapes inside a value: \\ \, \; and \n. Left in place, a
      summary of "Budget\, Forecast" became a title with a literal backslash. */
@@ -5332,20 +5372,62 @@ function parseIcs(text) {
     if (/Z\s*$/.test(raw) && /T/.test(raw)) return new Date(Date.UTC(y, mo, d, h, mi, se));
     return new Date(y, mo, d, h, mi, se);
   }
-  var names = [], re = /^ATTENDEE[^:\r\n]*?CN=([^;:\r\n]+)/gmi, mm;
+  /* Split params from value so a quoted CN can legally contain ':' and ';'.
+     The old single regex stopped at either, so CN="Ops: East Region Lead"
+     imported as "Ops". */
+  var names = [], seen = Object.create(null);
+  var re = /^ATTENDEE([^\r\n]*)/gmi, mm;
   while ((mm = re.exec(t))) {
-    var nm = unesc(mm[1]).replace(/^"|"$/g, '').trim();
-    /* Exchange writes CN="Chen, Sarah". The comma is part of ONE name, but the
-       roster is fed from a comma-joined string, so it split her into two
-       people — corrupting attribution and the "Present:" line of every export. */
-    if (/^[^,]+,\s*[^,]+$/.test(nm)) {
-      var pieces = nm.split(',');
-      nm = pieces[1].trim() + ' ' + pieces[0].trim();
+    /* Stop at the roster cap DURING the scan, not after it. An all-company
+       Outlook invite carries tens of thousands of ATTENDEE lines, and the old
+       indexOf-per-name dedupe over a growing array is quadratic: a real 3MB
+       invite froze the tab for thirty-seven seconds. */
+    if (names.length >= 12) break;
+
+    /* Find the colon that ends the parameter list — the first one NOT inside a
+       quoted value. Splitting on the first colon outright cut
+       CN="Ops: East Region Lead" in half and imported the person as "Ops". */
+    var line = mm[1] || '', inQ = false, cut = -1;
+    for (var ci = 0; ci < line.length; ci++) {
+      var ch = line.charAt(ci);
+      if (ch === '"') inQ = !inQ;
+      else if (ch === ':' && !inQ) { cut = ci; break; }
     }
+    var params = cut > -1 ? line.slice(0, cut) : line;
+    var value  = cut > -1 ? line.slice(cut + 1) : '';
+    var cn = params.match(/CN=(?:"([^"]*)"|([^;:]*))/i);
+    var nm = cn ? unesc(cn[1] !== undefined ? cn[1] : cn[2]).trim() : '';
+
+    /* No CN at all is common from non-Outlook generators. Falling through
+       silently dropped that person from the roster with no error. */
+    if (!nm) nm = unesc(value).replace(/^mailto:/i, '').trim();
     if (nm.indexOf('@') > -1) nm = nm.split('@')[0].replace(/[._]/g, ' ');
-    if (nm && names.indexOf(nm) === -1) names.push(nm);
+
+    /* Exchange writes CN="Chen, Sarah" — one person. The roster is fed from a
+       comma-joined string and re-split, so any surviving comma shatters a name
+       into pieces. Two parts reorder to "Sarah Chen"; anything else keeps its
+       order but loses the commas, because "Smith, John, Jr." became three
+       roster entries called Smith, John and Jr. */
+    if (nm.indexOf(',') > -1) {
+      var pieces = nm.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      nm = pieces.length === 2 ? (pieces[1] + ' ' + pieces[0]) : pieces.join(' ');
+    }
+    nm = nm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+
+    if (nm && !seen[nm.toLowerCase()]) { seen[nm.toLowerCase()] = 1; names.push(nm); }
   }
-  return { title: field('SUMMARY'), start: icsDate(field('DTSTART')), end: icsDate(field('DTEND')),
+  var start = icsDate(field('DTSTART'));
+  var end = icsDate(field('DTEND'));
+  /* Google Calendar writes DURATION instead of DTEND. Reading neither left the
+     confirmation toast with no end time at all. */
+  if (!end && start) {
+    var dur = field('DURATION').match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?/i);
+    if (dur && (dur[1] || dur[2] || dur[3])) {
+      end = new Date(start.getTime() + ((+dur[1] || 0) * 1440 + (+dur[2] || 0) * 60 + (+dur[3] || 0)) * 60000);
+    }
+  }
+  return { title: field('SUMMARY'), start: start, end: end,
+           cancelled: /CANCELLED/i.test(field('STATUS')),
            attendees: names.slice(0, 12),
            description: field('DESCRIPTION').replace(/\\n/g, ' ').slice(0, 400) };
 }
@@ -5353,6 +5435,13 @@ function parseIcs(text) {
 function applyIcs(text) {
   var ev = parseIcs(text);
   if (!ev.title && !ev.attendees.length) { toast('That did not look like a calendar invite.', 'err'); return false; }
+  /* An invite that was called off imported exactly like a live one — title,
+     time and attendees all populated, with nothing on screen to say the meeting
+     is not happening. */
+  if (ev.cancelled) {
+    toast('That invite is marked CANCELLED. Nothing was loaded — open the current one instead.', 'err', 10000);
+    return false;
+  }
   if (ev.title) CFG.meetingTitle = ev.title.slice(0, 120);
   if (ev.attendees.length) {
     CFG.participants = ev.attendees.join(', ').slice(0, 300);
